@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hmi-yolo-311d-fsab"
+version = "0.1.0"
+description = "Esqueleto de una HMI industrial de vision artificial"
+readme = "README.md"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "PySide6==6.7.3",
+]
+
+[project.optional-dependencies]
+plc = [
+    "aphyt==0.1.29",
+]
+dev = [
+    "mypy==1.11.2",
+    "pytest==8.3.3",
+    "pytest-qt==4.4.0",
+    "ruff==0.6.9",
+]
+
+[project.gui-scripts]
+hmi-yolo-311d-fsab = "hmi_yolo_311d_fsab.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --strict-config"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = "pytestqt.*"
+ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+
