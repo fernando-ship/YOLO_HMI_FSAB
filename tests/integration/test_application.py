@@ -1,8 +1,11 @@
+from dataclasses import replace
 from pathlib import Path
 
 from pytestqt.qtbot import QtBot
 
 from hmi_yolo_311d_fsab.app.bootstrap import create_controller
+from hmi_yolo_311d_fsab.infrastructure.config import load_config
+from hmi_yolo_311d_fsab.presentation.status_indicator import IndicatorState
 
 
 def test_application_creation_and_safe_close(qtbot: QtBot) -> None:
@@ -16,7 +19,20 @@ def test_application_creation_and_safe_close(qtbot: QtBot) -> None:
     assert controller.window.camera_start_button.isEnabled()
     assert not controller.window.camera_stop_button.isEnabled()
     assert not controller.window.inspection_button.isEnabled()
+    assert not controller.window.snapshot_button.isEnabled()
     assert controller.window.maintenance_page.health_table.rowCount() == 3
+    assert not controller.window.plc_state_label.is_active()
+    assert not controller.window.camera_state_label.is_active()
+    assert controller.window.connect_button.property("actionRole") == "start"
+    assert controller.window.camera_start_button.property("actionRole") == "start"
+    assert controller.window.operation_page.equipment_group.title() == "1. Preparar equipos"
+    assert controller.window.operation_page.camera_group.title() == "2. Verificar imagen"
+    assert (
+        controller.window.operation_page.inspection_group.title()
+        == "3. Inspeccionar y confirmar resultado"
+    )
+    assert controller.window.inspection_button.property("actionRole") == "primary"
+    assert controller.window.reset_counters_button.property("actionRole") == "utility"
 
     controller.window.close()
 
@@ -47,6 +63,9 @@ def test_error_creates_and_acknowledges_alarm(qtbot: QtBot) -> None:
     controller.window.show_error("Fallo simulado")
     assert controller.window.navigation.item(4).text() == "Alarmas (1)"
     assert controller.window.alarms_page.table.rowCount() == 1
+    assert controller.window.plc_state_label.state() is IndicatorState.ERROR
+    assert controller.window.connect_button.property("actionRole") == "retry"
+    assert controller.window.connect_button.text() == "Reintentar"
 
     controller.window.alarm_acknowledge_all_requested.emit()
     assert controller.window.navigation.item(4).text() == "Alarmas (0)"
@@ -60,10 +79,12 @@ def test_connect_and_disconnect_through_window(qtbot: QtBot) -> None:
     controller.window.connect_button.click()
     qtbot.waitUntil(controller.window.disconnect_button.isEnabled, timeout=2000)
     assert "CONNECTED" in controller.window.plc_state_label.text()
+    assert controller.window.plc_state_label.is_active()
 
     controller.window.disconnect_button.click()
     qtbot.waitUntil(controller.window.connect_button.isEnabled, timeout=2000)
     assert "DISCONNECTED" in controller.window.plc_state_label.text()
+    assert not controller.window.plc_state_label.is_active()
     controller.shutdown()
 
 
@@ -79,6 +100,8 @@ def test_simulated_camera_updates_view(qtbot: QtBot) -> None:
         timeout=2000,
     )
     assert "RUNNING" in controller.window.camera_state_label.text()
+    assert controller.window.camera_state_label.is_active()
+    assert controller.window.snapshot_button.isEnabled()
     assert "RUNNING" in controller.window.inference_state_label.text()
     assert "pieza: 92%" in controller.window.detection_summary_label.text()
 
@@ -111,5 +134,31 @@ def test_simulated_camera_updates_view(qtbot: QtBot) -> None:
     controller.window.camera_stop_button.click()
     qtbot.waitUntil(controller.window.camera_start_button.isEnabled, timeout=2000)
     assert "STOPPED" in controller.window.camera_state_label.text()
+    assert not controller.window.camera_state_label.is_active()
+    controller.shutdown()
+
+
+def test_snapshot_saves_raw_png(qtbot: QtBot, tmp_path: Path) -> None:
+    config = load_config(Path.cwd())
+    config = replace(config, paths=replace(config.paths, data_dir=tmp_path))
+    controller = create_controller(Path.cwd(), [], config)
+    qtbot.addWidget(controller.window)
+    controller.start(show_window=False)
+
+    controller.window.camera_start_button.click()
+    qtbot.waitUntil(controller.window.snapshot_button.isEnabled, timeout=2000)
+    qtbot.waitUntil(
+        lambda: "pieza: 92%" in controller.window.detection_summary_label.text(),
+        timeout=2000,
+    )
+    controller.window.snapshot_button.click()
+    qtbot.waitUntil(
+        lambda: len(tuple((tmp_path / "captures").glob("*.png"))) == 1,
+        timeout=2000,
+    )
+
+    saved = tuple((tmp_path / "captures").glob("*.png"))[0]
+    assert saved.stat().st_size > 0
+    assert controller.window.snapshot_count_label.text() == "Capturas: 1"
     controller.shutdown()
 

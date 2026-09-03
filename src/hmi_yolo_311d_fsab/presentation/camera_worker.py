@@ -8,12 +8,12 @@ from hmi_yolo_311d_fsab.domain.inference import InferenceError, InferenceResult
 from hmi_yolo_311d_fsab.domain.inspection import InspectionError
 from hmi_yolo_311d_fsab.domain.plc import PlcError
 from hmi_yolo_311d_fsab.domain.production import ProductionError
-from hmi_yolo_311d_fsab.presentation.frame_renderer import render_frame
+from hmi_yolo_311d_fsab.presentation.frame_renderer import frame_to_image, render_frame
 from hmi_yolo_311d_fsab.services.hmi_service import HmiService
 
 
 class CameraWorker(QObject):
-    frame_ready = Signal(QImage, object)
+    frame_ready = Signal(QImage, QImage, object)
     state_changed = Signal(object)
     operation_failed = Signal(str)
     inspection_failed = Signal(str)
@@ -109,5 +109,5 @@ class CameraWorker(QObject):
                 self._timer.stop()
             self.operation_failed.emit(str(exc))
             return
-        self.frame_ready.emit(render_frame(frame, result), result)
+        self.frame_ready.emit(render_frame(frame, result), frame_to_image(frame), result)
 

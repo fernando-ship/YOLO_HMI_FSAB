@@ -1,0 +1,100 @@
+{\rtf1\ansi\ansicpg1252\deff0
+{\fonttbl{\f0 Segoe UI;}{\f1 Consolas;}}
+{\colortbl;\red37\green99\blue235;\red22\green101\blue52;\red180\green35\blue24;\red31\green41\blue55;}
+\viewkind4\uc1
+\pard\sa180\qc\f0\fs36\b HMI YOLO 311D FSAB\b0\par
+\fs24 Informe de estado y pendientes\par
+\fs20 Fecha: 2 de septiembre de 2026\par
+\pard\sa160\ql
+\fs28\b 1. Resumen ejecutivo\b0\par
+\fs21 Durante esta sesion se preparo el entorno de desarrollo, se ejecuto la HMI, se mejoro su presentacion industrial y se integro una camara USB Arducam IMX477 HQ mediante OpenCV y DirectShow. La captura fisica fue validada a 640 x 480. El PLC y la inferencia YOLO siguen simulados por seguridad y por falta de los datos definitivos de planta.\par
+
+\fs28\b 2. Trabajo completado\b0\par
+\fs21\bullet\tab Entorno local creado con Python 3.10.11 de 64 bits, PySide6 6.7.3, OpenCV y herramientas de desarrollo.\par
+\bullet\tab Indicadores circulares agregados a PLC, camara y todas las entradas/salidas booleanas.\par
+\bullet\tab Codigo visual: negro para OFF, verde brillante para ON, ambar para transicion o reintento y rojo para error.\par
+\bullet\tab Botones diferenciados por funcion: iniciar/conectar, detener/desconectar, accion principal, confirmacion y utilidad.\par
+\bullet\tab Jerarquia tipografica agregada para titulo de aplicacion, secciones, estados y resultado de inspeccion.\par
+\bullet\tab Pantalla Operacion reorganizada en tres etapas: preparar equipos, verificar imagen e inspeccionar/confirmar.\par
+\bullet\tab El area de equipos fue compactada; el video conserva el espacio principal y la inspeccion ocupa una franja menor.\par
+\bullet\tab Monitor I/O redisenado con columnas orientadas al operador, filas alternadas, entradas azules, salidas ambar, encabezados fuertes y tags tecnicos separados.\par
+\bullet\tab Se elimino la superposicion del valor booleano oculto debajo del indicador.\par
+\bullet\tab El Monitor I/O fue verificado a 1100 px: columnas y viewport coinciden, sin superposicion ni scroll horizontal.\par
+\bullet\tab Navegacion lateral ajustada para evitar texto y barra horizontal superpuestos.\par
+\bullet\tab Backend OpenCV agregado como opcion de camara.\par
+\bullet\tab Descubrimiento de camaras de Windows agregado mediante Qt Multimedia.\par
+\bullet\tab Arducam IMX477 HQ detectada como USB VID 0C45 / PID 636D, indice OpenCV 0.\par
+\bullet\tab Captura fisica validada con DirectShow: 10 frames consecutivos, 640 x 480, 921600 bytes RGB por frame.\par
+\bullet\tab Flujo completo de Qt validado: apertura, frame real, render, estado RUNNING y cierre.\par
+\bullet\tab Transicion CAMARA: INICIANDO en ambar agregada durante los aproximadamente cuatro segundos que DirectShow necesita para abrir el dispositivo.\par
+\bullet\tab Funcion Capturar agregada. Guarda el ultimo frame RGB original en data/captures como PNG, sin caja ni texto de la inferencia simulada.\par
+\bullet\tab Historial reorganizado para no imponer un ancho minimo excesivo a toda la ventana.\par
+\bullet\tab README actualizado con camara real, indicadores, layout, Monitor I/O y capturas para dataset.\par
+
+\fs28\b 3. Validacion ejecutada\b0\par
+\fs21\bullet\tab 51 pruebas unitarias y de integracion aprobadas.\par
+\bullet\tab mypy en modo strict: sin errores en 54 archivos fuente.\par
+\bullet\tab ruff check: sin errores.\par
+\bullet\tab git diff --check: sin errores de espacios o conflictos.\par
+\bullet\tab Prueba de PNG: el archivo se crea, tiene contenido y actualiza el contador de capturas.\par
+\bullet\tab No se guardaron fotografias reales mientras el operador estuvo ausente.\par
+
+\fs28\b 4. Como ejecutar en esta PC\b0\par
+\pard\li360\sa80\f1\fs20 .\.venv\Scripts\python.exe -m hmi_yolo_311d_fsab\par
+\pard\sa160\ql\f0\fs21 La configuracion local config/runtime.ini selecciona backend opencv, dispositivo 0, 640 x 480 y 10 FPS. Este archivo es local y esta ignorado por Git.\par
+
+\fs28\b 5. Instalacion en otra PC de trabajo\b0\par
+\pard\li360\sa80\f1\fs20 py -3.10 -m venv .venv\par
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,camera]"\par
+.\.venv\Scripts\python.exe -m hmi_yolo_311d_fsab\par
+\pard\sa160\ql\f0\fs21 En la otra PC se debe seleccionar OpenCV y el indice real de la camara desde Configuracion. No se debe asumir que siempre sera el indice 0.\par
+
+\page
+\fs28\b 6. Pendientes prioritarios\b0\par
+\fs22\b Prioridad alta - Camara y dataset\b0\par
+\fs21\bullet\tab Confirmar iluminacion, distancia de trabajo, lente, enfoque y campo de vision definitivos.\par
+\bullet\tab Medir resoluciones y FPS estables bajo carga en el equipo final.\par
+\bullet\tab Implementar reconexion automatica si se desconecta el USB durante produccion.\par
+\bullet\tab Reemplazar el indice volatil 0 por identificacion estable del dispositivo cuando sea posible.\par
+\bullet\tab Definir clases, ejemplos OK/NOK y criterio de aceptacion con personal de proceso/calidad.\par
+\bullet\tab Capturar suficientes imagenes representativas de piezas buenas y defectos reales.\par
+\bullet\tab Definir politica de nombres, metadatos, respaldo y retencion para data/captures.\par
+\bullet\tab Anotar el dataset y separarlo en entrenamiento, validacion y prueba sin fuga de datos.\par
+
+\fs22\b Prioridad alta - Inferencia real\b0\par
+\fs21\bullet\tab Elegir y entrenar la version de YOLO adecuada al conjunto de datos.\par
+\bullet\tab Medir precision, recall, mAP y falsos positivos/negativos por tipo de defecto.\par
+\bullet\tab Sustituir SimulatedInferenceEngine por un adaptador real manteniendo el contrato actual.\par
+\bullet\tab Exportar y validar ONNX/TensorRT para la NVIDIA Jetson Orin Nano.\par
+\bullet\tab Ajustar confianza y reglas OK/NOK con datos reales; el 92 por ciento actual es simulado.\par
+
+\fs22\b Prioridad alta - PLC Omron\b0\par
+\fs21\bullet\tab Recibir modelo, firmware, IP y tabla final de tags publicados desde Sysmac Studio.\par
+\bullet\tab Validar lectura/escritura EtherNet/IP con APHYT contra el PLC fisico.\par
+\bullet\tab Definir handshake, timeouts, recuperacion y estado seguro con automatizacion.\par
+\bullet\tab Bloquear escrituras manuales no autorizadas antes de pruebas en maquina.\par
+
+\fs22\b Prioridad media - Jetson y produccion\b0\par
+\fs21\bullet\tab Confirmar versiones exactas de JetPack, L4T, CUDA, TensorRT y Python disponibles.\par
+\bullet\tab Implementar y validar V4L2 o Argus/GStreamer en la Jetson segun la camara final.\par
+\bullet\tab Medir latencia extremo a extremo, temperatura, memoria y estabilidad prolongada.\par
+\bullet\tab Crear instalador o servicio de arranque controlado para la HMI.\par
+\bullet\tab Agregar CI para pruebas, mypy y ruff en cada push.\par
+\bullet\tab Probar visualmente temas y escalas de Windows/Jetson adicionales.\par
+
+\fs28\b 7. Limitaciones conocidas\b0\par
+\fs21\bullet\tab La imagen de camara es real, pero la deteccion, caja y confianza siguen simuladas.\par
+\bullet\tab El PLC utilizado en la HMI sigue siendo simulado.\par
+\bullet\tab Los archivos production.ini y development.ini conservan defaults seguros; la camara real se selecciona localmente mediante runtime.ini.\par
+\bullet\tab Las capturas PNG no tienen eliminacion automatica.\par
+\bullet\tab El inicio DirectShow de esta Arducam tarda aproximadamente cuatro segundos.\par
+\bullet\tab La integracion final no debe considerarse validada para decisiones industriales hasta completar pruebas de camara, modelo, PLC y seguridad.\par
+
+\fs28\b 8. Estado de Git\b0\par
+\fs21 Repositorio: https://github.com/fernando-ship/YOLO_HMI_FSAB\par
+Rama: main\par
+El informe, el codigo y las pruebas de esta etapa se incluyen juntos en el commit de cierre y se envian a origin/main.\par
+
+\fs28\b 9. Siguiente sesion recomendada\b0\par
+\fs21 Revisar visualmente la HMI a la escala usada en el trabajo. Despues definir una escena de captura repetible y recolectar un primer lote pequeno y balanceado de imagenes OK/NOK. No iniciar entrenamiento hasta acordar clases y criterios de calidad.\par
+}

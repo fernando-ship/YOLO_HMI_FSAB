@@ -4,6 +4,7 @@ from enum import Enum
 
 class CameraBackend(Enum):
     SIMULATED = "simulated"
+    OPENCV = "opencv"
     V4L2 = "v4l2"
     ARGUS = "argus"
 

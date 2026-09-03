@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCloseEvent, QImage
 from PySide6.QtWidgets import (
@@ -11,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from hmi_yolo_311d_fsab.domain.alarm import Alarm
+from hmi_yolo_311d_fsab.domain.camera import CameraState
 from hmi_yolo_311d_fsab.domain.health import HealthSnapshot
 from hmi_yolo_311d_fsab.domain.inference import InferenceResult
 from hmi_yolo_311d_fsab.domain.inspection import InspectionCounters, InspectionResult
@@ -41,6 +44,7 @@ class MainWindow(QMainWindow):
     alarm_reported = Signal(str, str, str)
     alarm_acknowledge_requested = Signal(int)
     alarm_acknowledge_all_requested = Signal()
+    snapshot_requested = Signal(object, int)
 
     def __init__(
         self,
@@ -52,12 +56,17 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("HMI_YOLO_311D_FSAB")
         self.resize(1100, 820)
+        self._latest_raw_image: QImage | None = None
+        self._latest_frame_sequence = -1
         self.operation_page = OperationPage(initial_state)
         self.io_monitor = IoMonitor(io_points, simulated=initial_state.simulated_plc)
         self.events_page = EventsPage()
         self.history_page = HistoryPage()
         self.configuration_page = ConfigurationPage()
-        self.maintenance_page = MaintenancePage()
+        self.maintenance_page = MaintenancePage(
+            simulated_plc=initial_state.simulated_plc,
+            camera_backend=initial_state.camera_backend,
+        )
         self.alarms_page = AlarmsPage()
         self._reduced_motion = reduced_motion
         self.pages = QStackedWidget()
@@ -84,7 +93,9 @@ class MainWindow(QMainWindow):
                 "Mantenimiento",
             ]
         )
-        self.navigation.setFixedWidth(170)
+        self.navigation.setFixedWidth(190)
+        self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.navigation.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.navigation.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.navigation.currentRowChanged.connect(self._animate_current_page)
         self.navigation.setCurrentRow(0)
@@ -97,7 +108,9 @@ class MainWindow(QMainWindow):
         self.message_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.message_banner.setMinimumHeight(38)
         plc_label = "PLC SIMULADO" if initial_state.simulated_plc else "OMRON NX ETHERNET/IP"
-        root.addWidget(QLabel(f"HMI_YOLO_311D_FSAB  |  {plc_label}"))
+        self.title_label = QLabel(f"HMI_YOLO_311D_FSAB  |  {plc_label}")
+        self.title_label.setObjectName("applicationTitle")
+        root.addWidget(self.title_label)
         root.addWidget(self.message_banner)
         root.addLayout(content)
         container = QWidget()
@@ -110,27 +123,48 @@ class MainWindow(QMainWindow):
             self.alarm_acknowledge_all_requested.emit
         )
         self.events_page.append(initial_state.message)
+        self.operation_page.snapshot_requested.connect(self._request_snapshot)
         self._publish_test_handles()
 
     def apply_state(self, state: HmiState) -> None:
+        if state.camera_state is not CameraState.RUNNING:
+            self._latest_raw_image = None
+            self._latest_frame_sequence = -1
         self.operation_page.apply_state(state)
         self.events_page.append(state.message)
 
-    def show_frame(self, image: QImage, result: InferenceResult) -> None:
+    def show_frame(
+        self, image: QImage, raw_image: QImage, result: InferenceResult
+    ) -> None:
+        self._latest_raw_image = raw_image.copy()
+        self._latest_frame_sequence = result.frame_sequence
         self.operation_page.show_frame(image, result)
+
+    def _request_snapshot(self) -> None:
+        if self._latest_raw_image is None:
+            self.events_page.append("CAPTURA: No existe un frame disponible")
+            return
+        self.snapshot_requested.emit(
+            self._latest_raw_image.copy(), self._latest_frame_sequence
+        )
+
+    def show_snapshot_saved(self, path: Path) -> None:
+        self.operation_page.show_snapshot_saved(str(path))
+        self.events_page.append(f"Captura guardada: {path}")
+
+    def show_snapshot_error(self, message: str) -> None:
+        self.events_page.append(f"ERROR DE CAPTURA: {message}")
 
     def show_error(self, message: str) -> None:
         self.events_page.append(f"ERROR PLC: {message}")
-        self.operation_page.connect_button.setEnabled(True)
-        self.operation_page.disconnect_button.setEnabled(False)
-        self.operation_page.plc_state_label.setText("PLC: ERROR")
+        self.operation_page.show_plc_error_state()
         self.alarm_reported.emit("PLC", message, "error")
 
     def show_camera_error(self, message: str) -> None:
+        self._latest_raw_image = None
+        self._latest_frame_sequence = -1
         self.events_page.append(f"ERROR DE CAMARA: {message}")
-        self.operation_page.camera_start_button.setEnabled(True)
-        self.operation_page.camera_stop_button.setEnabled(False)
-        self.operation_page.camera_state_label.setText("CAMARA: ERROR")
+        self.operation_page.show_camera_error_state()
         self.alarm_reported.emit("CAMARA", message, "error")
 
     def show_inspection_error(self, message: str) -> None:
@@ -226,6 +260,8 @@ class MainWindow(QMainWindow):
             "reset_counters_button",
             "production_cycle_button",
             "production_ack_button",
+            "snapshot_button",
+            "snapshot_count_label",
         )
         for name in names:
             setattr(self, name, getattr(self.operation_page, name))

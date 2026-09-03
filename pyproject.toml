@@ -13,6 +13,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+camera = [
+    "opencv-python==5.0.0.93; platform_system == 'Windows'",
+]
 plc = [
     "aphyt==0.1.29",
 ]

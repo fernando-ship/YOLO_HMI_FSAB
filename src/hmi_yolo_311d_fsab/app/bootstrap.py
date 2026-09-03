@@ -22,15 +22,20 @@ from hmi_yolo_311d_fsab.infrastructure.jsonl_inspection_store import JsonlInspec
 from hmi_yolo_311d_fsab.infrastructure.linux_camera_discovery import LinuxCameraDiscovery
 from hmi_yolo_311d_fsab.infrastructure.logging_setup import configure_logging
 from hmi_yolo_311d_fsab.infrastructure.omron_nx_client import OmronNxEtherNetIpClient
+from hmi_yolo_311d_fsab.infrastructure.open_cv_camera import OpenCvCameraClient
 from hmi_yolo_311d_fsab.infrastructure.simulated_camera import SimulatedCameraClient
 from hmi_yolo_311d_fsab.infrastructure.simulated_inference import SimulatedInferenceEngine
 from hmi_yolo_311d_fsab.infrastructure.simulated_plc import SimulatedPlcClient
+from hmi_yolo_311d_fsab.infrastructure.windows_camera_discovery import WindowsCameraDiscovery
 from hmi_yolo_311d_fsab.presentation.camera_worker import CameraWorker
 from hmi_yolo_311d_fsab.presentation.main_window import MainWindow
 from hmi_yolo_311d_fsab.presentation.plc_worker import PlcWorker
 from hmi_yolo_311d_fsab.presentation.theme_manager import Theme, ThemeManager
 from hmi_yolo_311d_fsab.services.alarm_service import AlarmService
-from hmi_yolo_311d_fsab.services.camera_discovery_service import CameraDiscoveryService
+from hmi_yolo_311d_fsab.services.camera_discovery_service import (
+    CameraDiscovery,
+    CameraDiscoveryService,
+)
 from hmi_yolo_311d_fsab.services.camera_service import CameraService
 from hmi_yolo_311d_fsab.services.configuration_service import ConfigurationService
 from hmi_yolo_311d_fsab.services.health_service import HealthService
@@ -82,6 +87,7 @@ def create_controller(
         inspection_store,
         simulated_plc=settings.plc.mode is PlcMode.SIMULATED,
         inference_enabled=settings.inference.enabled,
+        camera_backend=settings.camera.backend.value,
     )
     existing_app = QApplication.instance()
     qt_app = (
@@ -103,6 +109,11 @@ def create_controller(
     heartbeat_timeout = max(2.0, 3 / settings.camera.frames_per_second)
     health_service.register("CAMARA", heartbeat_timeout)
     health_service.register("INFERENCIA", heartbeat_timeout)
+    camera_discovery: CameraDiscovery
+    if sys.platform == "win32":
+        camera_discovery = WindowsCameraDiscovery()
+    else:
+        camera_discovery = LinuxCameraDiscovery()
     return ApplicationController(
         qt_app,
         hmi_service,
@@ -112,7 +123,7 @@ def create_controller(
         QThread(),
         settings,
         ConfigurationService(project_root / "config" / "runtime.ini"),
-        CameraDiscoveryService(LinuxCameraDiscovery()),
+        CameraDiscoveryService(camera_discovery),
         AlarmService(),
         theme_manager,
         health_service,
@@ -130,6 +141,13 @@ def _create_plc_client(config: AppConfig) -> PlcClient:
 
 
 def _create_camera_client(config: AppConfig) -> CameraClient:
+    if config.camera.backend is CameraBackend.OPENCV:
+        return OpenCvCameraClient(
+            config.camera.device,
+            config.camera.width,
+            config.camera.height,
+            config.camera.frames_per_second,
+        )
     if config.camera.backend is not CameraBackend.SIMULATED:
         if not config.camera.fallback_to_simulator:
             raise ConfigurationError(

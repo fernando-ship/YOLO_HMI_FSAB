@@ -26,6 +26,7 @@ class HmiState:
     production_state: ProductionState
     message: str
     simulated_plc: bool
+    camera_backend: str = "simulated"
 
 
 class HmiService:
@@ -40,6 +41,7 @@ class HmiService:
         *,
         simulated_plc: bool,
         inference_enabled: bool,
+        camera_backend: str = "simulated",
     ) -> None:
         self._plc_service = plc_service
         self._camera_service = camera_service
@@ -49,6 +51,7 @@ class HmiService:
         self._inspection_store = inspection_store
         self._inference_enabled = inference_enabled
         self._simulated_plc = simulated_plc
+        self._camera_backend = camera_backend
         self._started = False
         self._message = "Aplicacion lista"
         self._logger = logging.getLogger(__name__)
@@ -93,13 +96,13 @@ class HmiService:
         self._camera_service.start()
         if self._inference_enabled:
             self._inference_service.start()
-        self._message = "Camara simulada iniciada"
+        self._message = f"Camara {self._camera_backend.upper()} iniciada"
         return self.get_state()
 
     def stop_camera(self) -> HmiState:
         self._camera_service.stop()
         self._inference_service.stop()
-        self._message = "Camara simulada detenida"
+        self._message = f"Camara {self._camera_backend.upper()} detenida"
         return self.get_state()
 
     def capture_frame(self) -> CameraFrame:
@@ -156,5 +159,6 @@ class HmiService:
             self._production_service.get_state(),
             self._message,
             self._simulated_plc,
+            self._camera_backend,
         )
 

@@ -10,7 +10,13 @@ from hmi_yolo_311d_fsab.infrastructure.config import (
 
 
 def test_development_config_selects_simulator() -> None:
-    config = load_config(Path.cwd(), {})
+    config = load_config(
+        Path.cwd(),
+        {
+            "HMI_YOLO_CAMERA_BACKEND": "simulated",
+            "HMI_YOLO_CAMERA_FALLBACK": "true",
+        },
+    )
     assert config.plc.mode is PlcMode.SIMULATED
     assert config.plc.port == 44818
     assert config.camera.backend.value == "simulated"

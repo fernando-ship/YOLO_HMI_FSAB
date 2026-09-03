@@ -1,7 +1,9 @@
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QObject, QThread, QTimer, Signal, Slot
+from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from hmi_yolo_311d_fsab.domain.alarm import AlarmSeverity
@@ -99,6 +101,7 @@ class ApplicationController(QObject):
         window.alarm_acknowledge_all_requested.connect(self.acknowledge_all_alarms)
         window.history_page.export_requested.connect(self.export_history)
         window.history_page.clear_requested.connect(self.clear_history)
+        window.snapshot_requested.connect(self.save_snapshot)
 
     def start(self, *, show_window: bool = True) -> None:
         self._hmi_service.start()
@@ -199,6 +202,26 @@ class ApplicationController(QObject):
         except OSError as exc:
             QMessageBox.warning(self.window, "No fue posible limpiar", str(exc))
 
+    @Slot(object, int)
+    def save_snapshot(self, image: object, frame_sequence: int) -> None:
+        if not isinstance(image, QImage):
+            self.window.show_snapshot_error("El frame recibido no es una imagen valida")
+            return
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        target = (
+            self._config.paths.data_dir
+            / "captures"
+            / f"capture-{timestamp}-frame-{frame_sequence:06d}.png"
+        )
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if not image.save(str(target)):
+                raise OSError("Qt no pudo codificar la imagen PNG")
+        except (OSError, ValueError) as exc:
+            self.window.show_snapshot_error(str(exc))
+            return
+        self.window.show_snapshot_saved(target)
+
     @Slot(object)
     def observe_state(self, state: HmiState) -> None:
         if state.plc_state is ConnectionState.CONNECTED:
@@ -215,8 +238,10 @@ class ApplicationController(QObject):
             self._health_service.deactivate("INFERENCIA", state.inference_state.value)
         self.window.set_health(self._health_service.snapshots())
 
-    @Slot(object, object)
-    def record_frame_heartbeat(self, _image: object, _result: object) -> None:
+    @Slot(object, object, object)
+    def record_frame_heartbeat(
+        self, _image: object, _raw_image: object, _result: object
+    ) -> None:
         self._health_service.heartbeat("CAMARA", "Frames recibidos")
         self._health_service.heartbeat("INFERENCIA", "Frames procesados")
 

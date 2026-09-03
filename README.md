@@ -13,6 +13,7 @@ hardware ni a una red industrial.
 - Configuracion INI, variables de entorno y logging centralizado.
 - Pruebas unitarias y de integracion sin hardware ni pantalla visible.
 - Camara simulada con patron RGB animado y vista previa en la HMI.
+- Captura USB real mediante OpenCV/DirectShow, validada con Arducam IMX477 HQ.
 - Inferencia simulada con deteccion, caja, clase, confianza y tiempo de proceso.
 - Inspeccion manual OK/NOK con reglas configurables y contadores en memoria.
 - Navegacion modular para Operacion, Monitor I/O, Eventos, Configuracion y Mantenimiento.
@@ -24,6 +25,10 @@ hardware ni a una red industrial.
 - Pantalla de historial con filtros, uso de espacio, exportacion CSV y limpieza confirmada.
 - Adaptador preparado para Omron Sysmac NX mediante EtherNet/IP explicito.
 - Monitor configurable de 10 entradas y 10 salidas booleanas, mensaje STRING y porcentaje.
+- Indicadores circulares negro/verde brillante para E/S booleanas, con ambar y rojo para
+  transiciones y fallos de PLC/camara.
+- Pantalla de operacion ordenada por etapas: preparar equipos, verificar imagen e inspeccionar.
+- Monitor I/O orientado al operador, con jerarquia visual, filas alternadas y direccion por color.
 
 ## Requisitos
 
@@ -114,6 +119,14 @@ La captura V4L2/Argus permanece bloqueada hasta conectar una camara y validar
 modelo, controlador y JetPack/L4T. Si se desactiva el fallback, seleccionar un
 backend real produce un error claro en lugar de simular silenciosamente.
 
+## Camara USB con OpenCV
+
+En Windows, el backend `opencv` abre dispositivos UVC por indice mediante DirectShow.
+El boton **Buscar camaras** muestra los dispositivos multimedia detectados y su indice.
+Instale el soporte opcional con `python -m pip install -e ".[camera]"`. La Arducam
+IMX477 HQ USB fue validada en el indice `0` a 640x480; esta captura es real, aunque la
+inferencia continua simulada hasta integrar el modelo YOLO.
+
 ## Inferencia simulada
 
 Cada frame pasa por `InferenceService` y un motor determinista genera una
@@ -123,6 +136,14 @@ de objetos y tiempo de proceso. Puede configurarse con
 
 Este motor valida el flujo de datos, la concurrencia y la presentacion; no es un
 modelo de vision y no toma decisiones industriales reales.
+
+## Capturas para dataset
+
+Con la camara activa, **Capturar** almacena el ultimo frame RGB original en
+`data/captures`. El PNG no contiene la caja ni el texto de la inferencia simulada, por
+lo que puede revisarse y clasificarse posteriormente para construir el dataset. Las
+capturas son manuales y no tienen retencion automatica; deben respaldarse antes de
+limpiar el directorio de datos.
 
 ## Inspeccion OK/NOK
 

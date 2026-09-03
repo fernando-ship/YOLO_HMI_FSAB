@@ -5,11 +5,17 @@ from hmi_yolo_311d_fsab.domain.health import HealthSnapshot
 
 
 class MaintenancePage(QWidget):
-    def __init__(self) -> None:
+    def __init__(self, *, simulated_plc: bool, camera_backend: str) -> None:
         super().__init__()
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f"HMI_YOLO_311D_FSAB {__version__}"))
-        layout.addWidget(QLabel("PLC: simulado | Camara: simulada | Inferencia: simulada"))
+        plc_description = "simulado" if simulated_plc else "Omron NX"
+        layout.addWidget(
+            QLabel(
+                f"PLC: {plc_description} | Camara: {camera_backend.upper()} | "
+                "Inferencia: simulada"
+            )
+        )
         layout.addWidget(QLabel("Hardware real y herramientas de diagnostico: pendientes"))
         self.health_table = QTableWidget(0, 4)
         self.health_table.setHorizontalHeaderLabels(

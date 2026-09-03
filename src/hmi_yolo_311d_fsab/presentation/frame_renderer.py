@@ -5,14 +5,18 @@ from hmi_yolo_311d_fsab.domain.camera import CameraFrame
 from hmi_yolo_311d_fsab.domain.inference import InferenceResult
 
 
-def render_frame(frame: CameraFrame, result: InferenceResult) -> QImage:
-    image = QImage(
+def frame_to_image(frame: CameraFrame) -> QImage:
+    return QImage(
         frame.rgb_data,
         frame.width,
         frame.height,
         frame.width * 3,
         QImage.Format.Format_RGB888,
     ).copy()
+
+
+def render_frame(frame: CameraFrame, result: InferenceResult) -> QImage:
+    image = frame_to_image(frame)
     painter = QPainter(image)
     painter.setPen(QPen(QColor(30, 255, 100), 3))
     painter.setFont(QFont("Sans Serif", 11))
