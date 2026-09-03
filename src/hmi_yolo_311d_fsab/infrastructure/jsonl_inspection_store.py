@@ -97,4 +97,3 @@ class JsonlInspectionStore:
             return date.fromisoformat(value)
         except ValueError:
             return None
-

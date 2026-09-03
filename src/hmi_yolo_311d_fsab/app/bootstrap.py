@@ -10,14 +10,18 @@ from hmi_yolo_311d_fsab.app.application import ApplicationController
 from hmi_yolo_311d_fsab.domain.camera import CameraClient
 from hmi_yolo_311d_fsab.domain.camera_device import CameraBackend
 from hmi_yolo_311d_fsab.domain.inference import InferenceEngine
-from hmi_yolo_311d_fsab.domain.inspection import InspectionRules
+from hmi_yolo_311d_fsab.domain.inspection import InspectionClassRule, InspectionRules
+from hmi_yolo_311d_fsab.domain.io_points import IoDirection
 from hmi_yolo_311d_fsab.domain.plc import PlcClient
+from hmi_yolo_311d_fsab.domain.recipe import InspectionRecipe
 from hmi_yolo_311d_fsab.infrastructure.config import (
     AppConfig,
     ConfigurationError,
+    InferenceEngineType,
     PlcMode,
     load_config,
 )
+from hmi_yolo_311d_fsab.infrastructure.json_recipe_store import JsonRecipeStore
 from hmi_yolo_311d_fsab.infrastructure.jsonl_inspection_store import JsonlInspectionStore
 from hmi_yolo_311d_fsab.infrastructure.linux_camera_discovery import LinuxCameraDiscovery
 from hmi_yolo_311d_fsab.infrastructure.logging_setup import configure_logging
@@ -27,6 +31,7 @@ from hmi_yolo_311d_fsab.infrastructure.simulated_camera import SimulatedCameraCl
 from hmi_yolo_311d_fsab.infrastructure.simulated_inference import SimulatedInferenceEngine
 from hmi_yolo_311d_fsab.infrastructure.simulated_plc import SimulatedPlcClient
 from hmi_yolo_311d_fsab.infrastructure.windows_camera_discovery import WindowsCameraDiscovery
+from hmi_yolo_311d_fsab.infrastructure.yolo_inference import YoloInferenceEngine
 from hmi_yolo_311d_fsab.presentation.camera_worker import CameraWorker
 from hmi_yolo_311d_fsab.presentation.main_window import MainWindow
 from hmi_yolo_311d_fsab.presentation.plc_worker import PlcWorker
@@ -45,6 +50,7 @@ from hmi_yolo_311d_fsab.services.inference_service import InferenceService
 from hmi_yolo_311d_fsab.services.inspection_service import InspectionService
 from hmi_yolo_311d_fsab.services.plc_service import PlcService
 from hmi_yolo_311d_fsab.services.production_service import ProductionService
+from hmi_yolo_311d_fsab.services.recipe_service import RecipeService
 
 
 def create_controller(
@@ -53,10 +59,19 @@ def create_controller(
     config: AppConfig | None = None,
 ) -> ApplicationController:
     settings = load_config(project_root) if config is None else config
+    default_class_rules = (
+        (
+            InspectionClassRule("Bolsa", 0.70, 1, 1),
+            InspectionClassRule("Label", 0.70, 1, 1),
+            InspectionClassRule("QR CODE", 0.70, 1, 1),
+        )
+        if settings.inference.engine is InferenceEngineType.YOLO
+        else ()
+    )
     configure_logging(settings.log_level, settings.paths.log_dir)
     client = _create_plc_client(settings)
     camera_client = _create_camera_client(settings)
-    inference_engine = _create_inference_engine()
+    inference_engine = _create_inference_engine(settings)
     plc_service = PlcService(client)
     camera_service = CameraService(camera_client)
     inference_service = InferenceService(
@@ -69,12 +84,15 @@ def create_controller(
             minimum_confidence=settings.inspection.minimum_confidence,
             minimum_objects=settings.inspection.minimum_objects,
             maximum_objects=settings.inspection.maximum_objects,
+            class_rules=default_class_rules,
         )
     )
     production_service = ProductionService(
         plc_service,
         inspection_service,
         {point.logical_name: point.tag for point in settings.io_points},
+        settings.production.quality_threshold_percent,
+        settings.production.cycle_timeout_seconds,
     )
     inspection_store = JsonlInspectionStore(settings.paths.data_dir / "inspections", 7)
     inspection_store.purge_expired()
@@ -85,6 +103,11 @@ def create_controller(
         inspection_service,
         production_service,
         inspection_store,
+        {
+            point.logical_name: point.tag
+            for point in settings.io_points
+            if point.direction is IoDirection.INPUT
+        },
         simulated_plc=settings.plc.mode is PlcMode.SIMULATED,
         inference_enabled=settings.inference.enabled,
         camera_backend=settings.camera.backend.value,
@@ -102,13 +125,32 @@ def create_controller(
         settings.io_points,
         reduced_motion=settings.appearance.reduced_motion,
     )
-    worker = PlcWorker(hmi_service)
-    camera_worker = CameraWorker(hmi_service, settings.camera.frames_per_second)
+    worker = PlcWorker(hmi_service, settings.production.plc_poll_interval_ms)
+    camera_worker = CameraWorker(
+        hmi_service,
+        settings.camera.frames_per_second,
+        settings.production.maximum_frame_age_ms,
+    )
     health_service = HealthService()
     health_service.register("PLC", 3600.0)
     heartbeat_timeout = max(2.0, 3 / settings.camera.frames_per_second)
     health_service.register("CAMARA", heartbeat_timeout)
     health_service.register("INFERENCIA", heartbeat_timeout)
+    recipe_service = RecipeService(
+        JsonRecipeStore(settings.paths.data_dir / "recipes" / "recipes.json"),
+        InspectionRecipe(
+            "default",
+            "Receta predeterminada",
+            settings.inspection.expected_label,
+            settings.inspection.minimum_confidence,
+            settings.inspection.minimum_objects,
+            settings.inspection.maximum_objects,
+            settings.production.quality_threshold_percent,
+            settings.production.cycle_timeout_seconds,
+            settings.production.maximum_frame_age_ms,
+            default_class_rules,
+        ),
+    )
     camera_discovery: CameraDiscovery
     if sys.platform == "win32":
         camera_discovery = WindowsCameraDiscovery()
@@ -128,6 +170,7 @@ def create_controller(
         theme_manager,
         health_service,
         HistoryService(inspection_store),
+        recipe_service,
     )
 
 
@@ -160,6 +203,12 @@ def _create_camera_client(config: AppConfig) -> CameraClient:
     return SimulatedCameraClient(config.camera.width, config.camera.height)
 
 
-def _create_inference_engine() -> InferenceEngine:
+def _create_inference_engine(config: AppConfig) -> InferenceEngine:
+    if config.inference.engine is InferenceEngineType.YOLO:
+        return YoloInferenceEngine(
+            config.inference.model_path,
+            config.inference.device,
+            config.inference.iou_threshold,
+            config.inference.image_size,
+        )
     return SimulatedInferenceEngine()
-

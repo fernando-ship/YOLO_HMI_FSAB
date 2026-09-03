@@ -47,4 +47,3 @@ def test_clear_removes_only_inspection_files(tmp_path: Path) -> None:
 
     assert JsonlInspectionStore(tmp_path).clear() == 1
     assert unrelated.exists()
-

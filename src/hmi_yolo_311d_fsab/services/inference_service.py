@@ -42,4 +42,3 @@ class InferenceService:
 
     def process(self, frame: CameraFrame) -> InferenceResult:
         return self._engine.infer(frame, self._confidence_threshold)
-

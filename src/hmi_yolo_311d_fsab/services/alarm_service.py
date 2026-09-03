@@ -50,4 +50,3 @@ class AlarmService:
                 self._alarms[index] = updated
                 return updated
         raise KeyError(f"Alarma inexistente: {identifier}")
-

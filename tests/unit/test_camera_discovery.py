@@ -33,4 +33,3 @@ def test_windows_camera_discovery_exposes_opencv_indices() -> None:
     assert devices[0].identifier == "0"
     assert devices[0].display_name == "Arducam IMX477 HQ Camera (OpenCV 0)"
     assert devices[0].backend is CameraBackend.OPENCV
-

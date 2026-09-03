@@ -27,4 +27,3 @@ def test_acknowledge_all_preserves_resolved_alarms() -> None:
     assert alarms[0].state is AlarmState.RESOLVED
     assert alarms[1].state is AlarmState.ACKNOWLEDGED
     assert second.identifier == 2
-

@@ -13,4 +13,3 @@ def fade_in(widget: QWidget, *, reduced_motion: bool) -> None:
     animation.setEndValue(1.0)
     animation.setEasingCurve(QEasingCurve.Type.OutCubic)
     animation.start()
-

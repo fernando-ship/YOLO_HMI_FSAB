@@ -1,19 +1,26 @@
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QCheckBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from hmi_yolo_311d_fsab.domain.camera import CameraState
 from hmi_yolo_311d_fsab.domain.inference import InferenceResult
-from hmi_yolo_311d_fsab.domain.inspection import InspectionCounters, InspectionResult
+from hmi_yolo_311d_fsab.domain.inspection import (
+    InspectionClassRule,
+    InspectionCounters,
+    InspectionResult,
+)
 from hmi_yolo_311d_fsab.domain.plc import ConnectionState
 from hmi_yolo_311d_fsab.domain.production import ProductionCycleResult, ProductionState
 from hmi_yolo_311d_fsab.presentation.status_indicator import IndicatorState, StatusIndicator
@@ -30,6 +37,7 @@ class OperationPage(QWidget):
     production_cycle_requested = Signal()
     production_acknowledge_requested = Signal()
     snapshot_requested = Signal()
+    calibration_changed = Signal(bool)
 
     def __init__(self, initial_state: HmiState) -> None:
         super().__init__()
@@ -39,6 +47,11 @@ class OperationPage(QWidget):
         self.camera_state_label = StatusIndicator()
         self.inference_state_label = QLabel()
         self.production_state_label = QLabel()
+        self.cycle_phases_label = QLabel(
+            "ESPERANDO  →  VALIDANDO  →  INSPECCIONANDO  →  RESULTADO  →  ACK"
+        )
+        self.cycle_phases_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.cycle_phases_label.setObjectName("cyclePhases")
         self.detection_summary_label = QLabel("Objetos: 0 | Tiempo: -- ms")
         self.detection_summary_label.setSizePolicy(
             QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
@@ -67,6 +80,12 @@ class OperationPage(QWidget):
         self.production_ack_button = QPushButton("Reconocer")
         self.snapshot_button = QPushButton("Capturar")
         self.snapshot_count_label = QLabel("Capturas: 0")
+        self.calibration_mode = QCheckBox("Modo calibracion (sin PLC ni contadores)")
+        self.requirement_table = QTableWidget(0, 3)
+        self.requirement_table.setHorizontalHeaderLabels(["CLASE", "CONFIANZA", "ESTADO"])
+        self.requirement_table.verticalHeader().setVisible(False)
+        self.requirement_table.setMaximumHeight(145)
+        self._class_rules: tuple[InspectionClassRule, ...] = ()
         self._snapshot_count = 0
         self.disconnect_button.setToolTip("Desconectar el PLC")
         self.camera_start_button.setToolTip("Iniciar la camara")
@@ -89,9 +108,7 @@ class OperationPage(QWidget):
         equipment_layout.setColumnStretch(0, 1)
         self.equipment_group = QGroupBox("1. Preparar equipos")
         self.equipment_group.setProperty("density", "compact")
-        self.equipment_group.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
-        )
+        self.equipment_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.equipment_group.setLayout(equipment_layout)
 
         camera_layout = QVBoxLayout()
@@ -103,16 +120,13 @@ class OperationPage(QWidget):
         camera_details.addWidget(self.snapshot_count_label)
         camera_details.addWidget(self.snapshot_button)
         camera_layout.addLayout(camera_details)
+        camera_layout.addWidget(self.requirement_table)
         self.camera_group = QGroupBox("2. Verificar imagen")
-        self.camera_group.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self.camera_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.camera_group.setLayout(camera_layout)
 
         inspection_summary = QHBoxLayout()
-        self.counters_label.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
-        )
+        self.counters_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.production_state_label.setSizePolicy(
             QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
         )
@@ -127,6 +141,8 @@ class OperationPage(QWidget):
         inspection_actions.addWidget(self.reset_counters_button)
         inspection_layout = QVBoxLayout()
         inspection_layout.addLayout(inspection_summary)
+        inspection_layout.addWidget(self.calibration_mode)
+        inspection_layout.addWidget(self.cycle_phases_label)
         inspection_layout.addLayout(inspection_actions)
         self.inspection_group = QGroupBox("3. Inspeccionar y confirmar resultado")
         self.inspection_group.setProperty("density", "compact")
@@ -159,6 +175,8 @@ class OperationPage(QWidget):
         self.production_cycle_button.clicked.connect(self.production_cycle_requested.emit)
         self.production_ack_button.clicked.connect(self.production_acknowledge_requested.emit)
         self.snapshot_button.clicked.connect(self.snapshot_requested.emit)
+        self.calibration_mode.toggled.connect(self._apply_calibration_mode)
+        self.calibration_mode.toggled.connect(self.calibration_changed.emit)
         self.apply_state(initial_state)
 
     def apply_state(self, state: HmiState) -> None:
@@ -177,10 +195,17 @@ class OperationPage(QWidget):
             CameraState.ERROR: IndicatorState.ERROR,
         }
         self.camera_state_label.set_state(camera_indicator_states[state.camera_state])
-        self.inference_state_label.setText(
-            f"INFERENCIA: {state.inference_state.value.upper()} (SIMULADA)"
-        )
+        self.inference_state_label.setText(f"INFERENCIA: {state.inference_state.value.upper()}")
         self.production_state_label.setText(f"CICLO: {state.production_state.value.upper()}")
+        phase_names = {
+            ProductionState.IDLE: "BLOQUEADO",
+            ProductionState.WAITING_TRIGGER: "ESPERANDO TRIGGER",
+            ProductionState.VALIDATING: "VALIDANDO",
+            ProductionState.INSPECTING: "INSPECCIONANDO",
+            ProductionState.WAITING_ACK: "RESULTADO LISTO - ESPERANDO ACK",
+            ProductionState.ERROR: "ERROR",
+        }
+        self.cycle_phases_label.setText(f"FASE ACTUAL: {phase_names[state.production_state]}")
         self.connect_button.setEnabled(
             state.plc_state in {ConnectionState.DISCONNECTED, ConnectionState.ERROR}
         )
@@ -197,17 +222,45 @@ class OperationPage(QWidget):
         self.camera_stop_button.setEnabled(running)
         self._set_action_role(self.camera_stop_button, "stop")
         self.snapshot_button.setEnabled(running)
-        inspection_unlocked = running and state.plc_state is ConnectionState.CONNECTED
+        inspection_unlocked = running and (
+            state.plc_state is ConnectionState.CONNECTED or self.calibration_mode.isChecked()
+        )
         self.inspection_button.setEnabled(inspection_unlocked)
         self.inspection_button.setToolTip(
             "" if inspection_unlocked else "Conecte el PLC e inicie la camara para inspeccionar"
         )
         self.production_cycle_button.setEnabled(
             running
+            and not self.calibration_mode.isChecked()
             and state.plc_state is ConnectionState.CONNECTED
             and state.production_state is ProductionState.WAITING_TRIGGER
         )
-        self.production_ack_button.setEnabled(state.production_state is ProductionState.COMPLETED)
+        self.production_ack_button.setEnabled(state.production_state is ProductionState.WAITING_ACK)
+
+    def set_class_rules(self, rules: tuple[InspectionClassRule, ...]) -> None:
+        self._class_rules = rules
+        self.requirement_table.setRowCount(len(rules))
+        for row, rule in enumerate(rules):
+            for column, text in enumerate((rule.label, "--", "ESPERANDO")):
+                item = QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.requirement_table.setItem(row, column, item)
+        self.requirement_table.horizontalHeader().setStretchLastSection(True)
+
+    def _apply_calibration_mode(self, enabled: bool) -> None:
+        running = self.camera_stop_button.isEnabled()
+        self.inspection_button.setEnabled(
+            running and (enabled or self.disconnect_button.isEnabled())
+        )
+        self.production_cycle_button.setEnabled(
+            not enabled and running and self.disconnect_button.isEnabled()
+        )
+        self.production_ack_button.setEnabled(
+            False if enabled else self.production_ack_button.isEnabled()
+        )
+        self.inspection_result_label.setText(
+            "CALIBRACION: ACTIVA" if enabled else "INSPECCION: IDLE"
+        )
 
     def show_plc_error_state(self) -> None:
         self.plc_state_label.setText("PLC: ERROR")
@@ -239,6 +292,10 @@ class OperationPage(QWidget):
     def _show_camera_starting(self) -> None:
         self.camera_state_label.setText("CAMARA: INICIANDO")
         self.camera_state_label.set_state(IndicatorState.WARNING)
+        self.inference_state_label.setText("INFERENCIA: CARGANDO MODELO...")
+        self.video_label.setText(
+            "Iniciando camara y cargando YOLO...\nLa primera carga puede tardar 10-20 segundos."
+        )
         self.camera_start_button.setEnabled(False)
 
     @staticmethod
@@ -263,6 +320,25 @@ class OperationPage(QWidget):
         self.detection_summary_label.setText(
             f"Objetos: {count}{details} | Tiempo: {result.elapsed_ms:.2f} ms"
         )
+        for row, rule in enumerate(self._class_rules):
+            confidence = max(
+                (
+                    detection.confidence
+                    for detection in result.detections
+                    if detection.label == rule.label
+                ),
+                default=0.0,
+            )
+            matches = sum(
+                detection.label == rule.label and detection.confidence >= rule.minimum_confidence
+                for detection in result.detections
+            )
+            passed = rule.minimum_objects <= matches <= rule.maximum_objects
+            confidence_item = self.requirement_table.item(row, 1)
+            status_item = self.requirement_table.item(row, 2)
+            confidence_item.setText(f"{confidence:.0%} / {rule.minimum_confidence:.0%}")
+            status_item.setText("CUMPLE" if passed else "NO CUMPLE")
+            status_item.setForeground(QColor("#22c55e" if passed else "#ef4444"))
 
     def show_inspection(self, result: InspectionResult, counters: InspectionCounters) -> None:
         self.inspection_result_label.setText(
@@ -282,6 +358,7 @@ class OperationPage(QWidget):
     def show_production_cycle(self, cycle: ProductionCycleResult) -> None:
         self.show_inspection(cycle.inspection, cycle.counters)
         self.production_state_label.setText(f"CICLO: {cycle.state.value.upper()} #{cycle.sequence}")
+        self.cycle_phases_label.setText("FASE ACTUAL: RESULTADO LISTO - ESPERANDO ACK")
         self.production_cycle_button.setEnabled(False)
         self.production_ack_button.setEnabled(True)
 
@@ -289,4 +366,4 @@ class OperationPage(QWidget):
         self.production_state_label.setText(f"CICLO: {state.value.upper()}")
         self.production_cycle_button.setEnabled(True)
         self.production_ack_button.setEnabled(False)
-
+        self.cycle_phases_label.setText("FASE ACTUAL: ESPERANDO TRIGGER")

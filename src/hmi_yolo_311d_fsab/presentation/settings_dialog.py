@@ -1,4 +1,5 @@
 from dataclasses import replace
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -7,6 +8,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -21,7 +23,11 @@ from PySide6.QtWidgets import (
 )
 
 from hmi_yolo_311d_fsab.domain.camera_device import CameraBackend, CaptureProfile
-from hmi_yolo_311d_fsab.infrastructure.config import AppConfig, PlcMode
+from hmi_yolo_311d_fsab.infrastructure.config import (
+    AppConfig,
+    InferenceEngineType,
+    PlcMode,
+)
 from hmi_yolo_311d_fsab.services.camera_discovery_service import CameraDiscoveryService
 
 
@@ -37,6 +43,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._build_camera_tab(), "Camara")
         tabs.addTab(self._build_inference_tab(), "Inferencia")
         tabs.addTab(self._build_inspection_tab(), "Inspeccion")
+        tabs.addTab(self._build_production_tab(), "Ciclo automatico")
         tabs.addTab(self._build_io_tab(), "Entradas / salidas")
         tabs.addTab(self._build_appearance_tab(), "Apariencia")
         buttons = QDialogButtonBox(
@@ -86,6 +93,11 @@ class SettingsDialog(QDialog):
                 self._config.inference,
                 enabled=self.inference_enabled.isChecked(),
                 confidence_threshold=self.inference_threshold.value(),
+                engine=InferenceEngineType(self.inference_engine.currentData()),
+                model_path=Path(self.model_path.text().strip()),
+                device=str(self.inference_device.currentData()),
+                iou_threshold=self.iou_threshold.value(),
+                image_size=self.image_size.value(),
             ),
             inspection=replace(
                 self._config.inspection,
@@ -93,6 +105,13 @@ class SettingsDialog(QDialog):
                 minimum_confidence=self.inspection_confidence.value(),
                 minimum_objects=self.minimum_objects.value(),
                 maximum_objects=self.maximum_objects.value(),
+            ),
+            production=replace(
+                self._config.production,
+                quality_threshold_percent=self.quality_percent.value(),
+                cycle_timeout_seconds=self.cycle_timeout.value(),
+                maximum_frame_age_ms=self.maximum_frame_age.value(),
+                plc_poll_interval_ms=self.plc_poll_interval.value(),
             ),
             io_points=points,
             appearance=replace(
@@ -201,13 +220,54 @@ class SettingsDialog(QDialog):
     def _build_inference_tab(self) -> QWidget:
         self.inference_enabled = QCheckBox("Inferencia habilitada")
         self.inference_enabled.setChecked(self._config.inference.enabled)
+        self.inference_engine = QComboBox()
+        self.inference_engine.addItem("Simulado", InferenceEngineType.SIMULATED.value)
+        self.inference_engine.addItem("YOLO (Ultralytics)", InferenceEngineType.YOLO.value)
+        self.inference_engine.setCurrentIndex(
+            0 if self._config.inference.engine is InferenceEngineType.SIMULATED else 1
+        )
+        self.model_path = QLineEdit(str(self._config.inference.model_path))
+        model_button = QPushButton("Seleccionar modelo")
+        model_button.clicked.connect(self._select_model)
+        model_row = QWidget()
+        model_layout = QHBoxLayout(model_row)
+        model_layout.setContentsMargins(0, 0, 0, 0)
+        model_layout.addWidget(self.model_path)
+        model_layout.addWidget(model_button)
+        self.inference_device = QComboBox()
+        for label, value in (
+            ("Automatico", "auto"),
+            ("CPU", "cpu"),
+            ("GPU CUDA", "0"),
+        ):
+            self.inference_device.addItem(label, value)
+        device_index = self.inference_device.findData(self._config.inference.device)
+        self.inference_device.setCurrentIndex(max(0, device_index))
         self.inference_threshold = self._double_spin(
             0.0, 1.0, self._config.inference.confidence_threshold
         )
+        self.iou_threshold = self._double_spin(0.0, 1.0, self._config.inference.iou_threshold)
+        self.image_size = self._spin(32, 4096, self._config.inference.image_size)
+        self.image_size.setSingleStep(32)
         return self._form_widget(
             ("Estado", self.inference_enabled),
-            ("Umbral", self.inference_threshold),
+            ("Motor", self.inference_engine),
+            ("Modelo", model_row),
+            ("Dispositivo", self.inference_device),
+            ("Confianza", self.inference_threshold),
+            ("IoU", self.iou_threshold),
+            ("Tamano de entrada", self.image_size),
         )
+
+    def _select_model(self) -> None:
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar modelo YOLO",
+            self.model_path.text(),
+            "Modelos YOLO (*.pt *.onnx *.engine);;Todos los archivos (*)",
+        )
+        if selected:
+            self.model_path.setText(selected)
 
     def _build_inspection_tab(self) -> QWidget:
         self.expected_label = QLineEdit(self._config.inspection.expected_label)
@@ -246,6 +306,22 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.io_table)
         return widget
 
+    def _build_production_tab(self) -> QWidget:
+        self.quality_percent = self._double_spin(
+            0.0, 100.0, self._config.production.quality_threshold_percent
+        )
+        self.cycle_timeout = self._double_spin(
+            0.1, 120.0, self._config.production.cycle_timeout_seconds
+        )
+        self.maximum_frame_age = self._spin(50, 10000, self._config.production.maximum_frame_age_ms)
+        self.plc_poll_interval = self._spin(50, 5000, self._config.production.plc_poll_interval_ms)
+        return self._form_widget(
+            ("Calidad minima (%)", self.quality_percent),
+            ("Timeout del ciclo (s)", self.cycle_timeout),
+            ("Antiguedad maxima del frame (ms)", self.maximum_frame_age),
+            ("Sondeo del PLC (ms)", self.plc_poll_interval),
+        )
+
     def _build_appearance_tab(self) -> QWidget:
         self.theme = QComboBox()
         self.theme.addItem("Oscuro", "dark")
@@ -282,4 +358,3 @@ class SettingsDialog(QDialog):
         field.setDecimals(2)
         field.setValue(value)
         return field
-

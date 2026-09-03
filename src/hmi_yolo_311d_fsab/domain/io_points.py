@@ -24,4 +24,3 @@ class IoPoint:
     direction: IoDirection
     writable: bool
     value: PlcValue
-

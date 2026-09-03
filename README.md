@@ -25,6 +25,27 @@ hardware ni a una red industrial.
 - Pantalla de historial con filtros, uso de espacio, exportacion CSV y limpieza confirmada.
 - Adaptador preparado para Omron Sysmac NX mediante EtherNet/IP explicito.
 - Monitor configurable de 10 entradas y 10 salidas booleanas, mensaje STRING y porcentaje.
+- Identidad TAPEXVISION integrada y tema de alto contraste con acentos rojos.
+- Recetas locales para cambiar producto y reglas sin editar archivos.
+- Simulador interactivo de entradas PLC con trigger, ACK y mensaje de operador.
+
+## Simulador interactivo del PLC
+
+La seccion **Simulador PLC** permite modificar las 10 entradas booleanas y el
+mensaje `operator_message` cuando el modo es `simulated`. `trigger_inspection` y
+`result_ack` ofrecen pulsos con duracion suficiente para el sondeo configurado.
+Las salidas de la HMI se actualizan en vivo y nunca son editables desde esta
+pantalla. Todos los cambios se registran en Eventos. En modo real los controles
+permanecen deshabilitados.
+
+## Recetas de inspeccion
+
+La seccion **Recetas** permite guardar, duplicar y activar configuraciones por
+producto. Cada receta contiene clase, confianza, rango de objetos, calidad,
+timeout y antiguedad maxima del frame. Los cambios se guardan atomicamente en
+`data/recipes/recipes.json` y solo pueden activarse cuando no existe un resultado
+esperando ACK. La receta activa no puede eliminarse. La asociacion con un modelo
+YOLO se agregara cuando exista el modelo definitivo.
 - Indicadores circulares negro/verde brillante para E/S booleanas, con ambar y rojo para
   transiciones y fallos de PLC/camara.
 - Pantalla de operacion ordenada por etapas: preparar equipos, verificar imagen e inspeccionar.
@@ -184,6 +205,14 @@ completo. El handshake actualiza `inspection_busy`, `inspection_complete`,
 `inspection_ok`, `inspection_nok` e `inspection_sequence`. **Reconocer resultado**
 limpia las salidas de resultado y prepara el siguiente disparo. Este flujo solo
 opera contra el cliente PLC simulado.
+
+El ciclo automatico detecta el flanco ascendente de `trigger_inspection`, valida
+PLC, camara y antiguedad del ultimo frame, ejecuta una sola inspeccion y queda en
+`WAITING_ACK`. Un trigger sostenido no produce ciclos duplicados. El PLC reconoce
+el resultado mediante `result_ack`; la aplicacion nunca escribe esos dos tags de
+entrada. La calidad minima, timeout del ciclo, antiguedad maxima del frame e
+intervalo de sondeo se editan en **Configuracion > Ciclo automatico**. Los valores
+iniciales son 85%, 3 s, 500 ms y 250 ms respectivamente.
 
 ## PLC simulado
 

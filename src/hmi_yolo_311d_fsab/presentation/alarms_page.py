@@ -64,4 +64,3 @@ class AlarmsPage(QWidget):
         for row in range(self.table.rowCount()):
             visible = desired == "Todas" or self.table.item(row, 4).text() == mapping[desired]
             self.table.setRowHidden(row, not visible)
-

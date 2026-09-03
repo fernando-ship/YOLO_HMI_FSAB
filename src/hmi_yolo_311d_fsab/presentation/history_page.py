@@ -101,4 +101,3 @@ class HistoryPage(QWidget):
         if size < 1024:
             return f"{size} B"
         return f"{size / 1024:.1f} KiB"
-

@@ -32,4 +32,3 @@ class HistoryService:
                         record.reason,
                     ]
                 )
-

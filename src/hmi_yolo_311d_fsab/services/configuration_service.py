@@ -51,12 +51,23 @@ class ConfigurationService:
         parser["inference"] = {
             "enabled": str(config.inference.enabled).lower(),
             "confidence_threshold": str(config.inference.confidence_threshold),
+            "engine": config.inference.engine.value,
+            "model_path": self._portable_path(config.inference.model_path, project_root),
+            "device": config.inference.device,
+            "iou_threshold": str(config.inference.iou_threshold),
+            "image_size": str(config.inference.image_size),
         }
         parser["inspection"] = {
             "expected_label": config.inspection.expected_label,
             "minimum_confidence": str(config.inspection.minimum_confidence),
             "minimum_objects": str(config.inspection.minimum_objects),
             "maximum_objects": str(config.inspection.maximum_objects),
+        }
+        parser["production"] = {
+            "quality_threshold_percent": str(config.production.quality_threshold_percent),
+            "cycle_timeout_seconds": str(config.production.cycle_timeout_seconds),
+            "maximum_frame_age_ms": str(config.production.maximum_frame_age_ms),
+            "plc_poll_interval_ms": str(config.production.plc_poll_interval_ms),
         }
         for point in config.io_points:
             parser[f"io.{point.logical_name}"] = {
@@ -83,11 +94,23 @@ class ConfigurationService:
             raise ValueError("El puerto o dispositivo de camara no puede estar vacio")
         if config.inspection.maximum_objects < config.inspection.minimum_objects:
             raise ValueError("El rango de objetos no es valido")
+        if not 0 <= config.production.quality_threshold_percent <= 100:
+            raise ValueError("El porcentaje de calidad debe estar entre 0 y 100")
+        if config.production.cycle_timeout_seconds <= 0:
+            raise ValueError("El timeout del ciclo debe ser positivo")
+        if config.production.maximum_frame_age_ms <= 0:
+            raise ValueError("La antiguedad maxima del frame debe ser positiva")
+        if config.production.plc_poll_interval_ms < 50:
+            raise ValueError("El sondeo del PLC debe ser de al menos 50 ms")
         if any(not point.tag.strip() for point in config.io_points):
             raise ValueError("Todos los puntos de E/S necesitan un tag")
         tags = [point.tag for point in config.io_points]
         if len(tags) != len(set(tags)):
             raise ValueError("Los tags de E/S no pueden estar duplicados")
+        if not 0.0 <= config.inference.iou_threshold <= 1.0:
+            raise ValueError("El umbral IoU debe estar entre 0 y 1")
+        if not 32 <= config.inference.image_size <= 4096:
+            raise ValueError("El tamano de imagen YOLO debe estar entre 32 y 4096")
 
     @staticmethod
     def _portable_path(path: Path, project_root: Path) -> str:
@@ -95,4 +118,3 @@ class ConfigurationService:
             return str(path.relative_to(project_root))
         except ValueError:
             return str(path)
-

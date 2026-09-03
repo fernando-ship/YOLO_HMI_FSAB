@@ -13,4 +13,3 @@ class ConfigurationPage(QWidget):
         layout.addWidget(QLabel("Parametros de PLC, camara, inferencia, inspeccion y tags."))
         layout.addWidget(button)
         layout.addStretch()
-

@@ -46,4 +46,3 @@ def test_inactive_component_does_not_timeout() -> None:
     clock.value = 100.0
 
     assert service.evaluate()[0].message == "Detenido"
-

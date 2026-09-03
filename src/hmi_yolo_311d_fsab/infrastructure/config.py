@@ -18,6 +18,11 @@ class PlcMode(Enum):
     REAL = "real"
 
 
+class InferenceEngineType(Enum):
+    SIMULATED = "simulated"
+    YOLO = "yolo"
+
+
 @dataclass(frozen=True)
 class PlcConfig:
     mode: PlcMode
@@ -51,6 +56,11 @@ class CameraConfig:
 class InferenceConfig:
     enabled: bool
     confidence_threshold: float
+    engine: InferenceEngineType = InferenceEngineType.SIMULATED
+    model_path: Path = Path("models/best.pt")
+    device: str = "auto"
+    iou_threshold: float = 0.70
+    image_size: int = 640
 
 
 @dataclass(frozen=True)
@@ -59,6 +69,14 @@ class InspectionConfig:
     minimum_confidence: float
     minimum_objects: int
     maximum_objects: int
+
+
+@dataclass(frozen=True)
+class ProductionConfig:
+    quality_threshold_percent: float = 85.0
+    cycle_timeout_seconds: float = 3.0
+    maximum_frame_age_ms: int = 500
+    plc_poll_interval_ms: int = 250
 
 
 @dataclass(frozen=True)
@@ -85,6 +103,7 @@ class AppConfig:
     inspection: InspectionConfig
     io_points: tuple[IoPoint, ...]
     appearance: AppearanceConfig = AppearanceConfig()
+    production: ProductionConfig = ProductionConfig()
 
 
 def load_config(
@@ -192,6 +211,37 @@ def load_config(
                     parser.get("inference", "confidence_threshold"),
                 )
             ),
+            engine=InferenceEngineType(
+                env.get(
+                    "HMI_YOLO_INFERENCE_ENGINE",
+                    parser.get("inference", "engine", fallback="simulated"),
+                ).lower()
+            ),
+            model_path=_resolve_path(
+                project_root,
+                env.get(
+                    "HMI_YOLO_MODEL_PATH",
+                    parser.get("inference", "model_path", fallback="models/best.pt"),
+                ),
+            ),
+            device=env.get(
+                "HMI_YOLO_DEVICE",
+                parser.get("inference", "device", fallback="auto"),
+            )
+            .strip()
+            .lower(),
+            iou_threshold=float(
+                env.get(
+                    "HMI_YOLO_IOU_THRESHOLD",
+                    parser.get("inference", "iou_threshold", fallback="0.70"),
+                )
+            ),
+            image_size=int(
+                env.get(
+                    "HMI_YOLO_IMAGE_SIZE",
+                    parser.get("inference", "image_size", fallback="640"),
+                )
+            ),
         )
         inspection = InspectionConfig(
             expected_label=env.get(
@@ -213,6 +263,32 @@ def load_config(
                 env.get(
                     "HMI_YOLO_MAXIMUM_OBJECTS",
                     parser.get("inspection", "maximum_objects"),
+                )
+            ),
+        )
+        production = ProductionConfig(
+            quality_threshold_percent=float(
+                env.get(
+                    "HMI_YOLO_QUALITY_PERCENT",
+                    parser.get("production", "quality_threshold_percent", fallback="85"),
+                )
+            ),
+            cycle_timeout_seconds=float(
+                env.get(
+                    "HMI_YOLO_CYCLE_TIMEOUT",
+                    parser.get("production", "cycle_timeout_seconds", fallback="3"),
+                )
+            ),
+            maximum_frame_age_ms=int(
+                env.get(
+                    "HMI_YOLO_MAX_FRAME_AGE_MS",
+                    parser.get("production", "maximum_frame_age_ms", fallback="500"),
+                )
+            ),
+            plc_poll_interval_ms=int(
+                env.get(
+                    "HMI_YOLO_PLC_POLL_MS",
+                    parser.get("production", "plc_poll_interval_ms", fallback="250"),
                 )
             ),
         )
@@ -249,6 +325,12 @@ def load_config(
         raise ConfigurationError("La rotacion debe ser 0, 90, 180 o 270 grados")
     if not 0.0 <= inference.confidence_threshold <= 1.0:
         raise ConfigurationError("El umbral de confianza debe estar entre 0 y 1")
+    if not 0.0 <= inference.iou_threshold <= 1.0:
+        raise ConfigurationError("El umbral IoU debe estar entre 0 y 1")
+    if inference.image_size < 32 or inference.image_size > 4096:
+        raise ConfigurationError("El tamano de imagen YOLO debe estar entre 32 y 4096")
+    if inference.device not in {"auto", "cpu", "cuda", "0"}:
+        raise ConfigurationError("El dispositivo YOLO debe ser auto, cpu, cuda o 0")
     if not inspection.expected_label:
         raise ConfigurationError("La clase esperada no puede estar vacia")
     if not 0.0 <= inspection.minimum_confidence <= 1.0:
@@ -257,6 +339,12 @@ def load_config(
         raise ConfigurationError("El rango de objetos de inspeccion no es valido")
     if appearance.theme not in {"dark", "light", "high_contrast"}:
         raise ConfigurationError("Tema visual no valido")
+    if not 0 <= production.quality_threshold_percent <= 100:
+        raise ConfigurationError("El porcentaje de calidad debe estar entre 0 y 100")
+    if production.cycle_timeout_seconds <= 0:
+        raise ConfigurationError("El timeout del ciclo debe ser positivo")
+    if production.maximum_frame_age_ms <= 0 or production.plc_poll_interval_ms < 50:
+        raise ConfigurationError("Los tiempos de produccion no son validos")
 
     return AppConfig(
         environment=environment,
@@ -268,6 +356,7 @@ def load_config(
         inspection=inspection,
         io_points=io_points,
         appearance=appearance,
+        production=production,
     )
 
 
@@ -314,4 +403,3 @@ def _default_io_value(data_type: IoDataType) -> bool | int | float | str:
         IoDataType.TEXT: "",
     }
     return defaults[data_type]
-

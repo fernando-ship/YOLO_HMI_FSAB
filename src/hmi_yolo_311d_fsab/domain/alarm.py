@@ -24,4 +24,3 @@ class Alarm:
     severity: AlarmSeverity
     state: AlarmState
     created_at: datetime
-

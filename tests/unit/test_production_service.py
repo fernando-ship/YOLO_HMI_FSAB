@@ -16,6 +16,7 @@ TAGS = {
     "inspection_nok": "nok",
     "inspection_sequence": "sequence",
     "quality_percent": "quality",
+    "result_ack": "ack",
 }
 
 
@@ -42,7 +43,7 @@ def test_complete_ok_handshake_and_acknowledge() -> None:
     detection = Detection("pieza", 0.92, BoundingBox(0, 0, 10, 10))
     cycle = service.execute_if_triggered(InferenceResult(4, (detection,), 2.0))
 
-    assert cycle.state is ProductionState.COMPLETED
+    assert cycle.state is ProductionState.WAITING_ACK
     assert cycle.inspection.status is InspectionStatus.OK
     assert client.read_variable("busy") is False
     assert client.read_variable("complete") is True
@@ -65,3 +66,29 @@ def test_nok_sets_exclusive_output() -> None:
     assert client.read_variable("ok") is False
     assert client.read_variable("nok") is True
 
+
+def test_held_trigger_cannot_start_second_cycle_before_ack() -> None:
+    service, _ = build_service()
+    service.arm()
+    service.simulate_trigger()
+    service.execute_if_triggered(InferenceResult(1, (), 1.0))
+
+    with pytest.raises(ProductionError, match="no esta preparado"):
+        service.execute_if_triggered(InferenceResult(2, (), 1.0))
+
+
+def test_quality_threshold_can_reject_otherwise_valid_detection() -> None:
+    client = SimulatedPlcClient(initial_variables={tag: False for tag in TAGS.values()})
+    plc = PlcService(client)
+    plc.start()
+    client.connect()
+    inspection = InspectionService(InspectionRules("pieza", 0.5, 1, 1))
+    service = ProductionService(plc, inspection, TAGS, quality_threshold_percent=90.0)
+    service.arm()
+    service.simulate_trigger()
+    detection = Detection("pieza", 0.80, BoundingBox(0, 0, 10, 10))
+
+    cycle = service.execute_if_triggered(InferenceResult(3, (detection,), 1.0))
+
+    assert cycle.inspection.status is InspectionStatus.NOK
+    assert client.read_variable("quality") == 80.0

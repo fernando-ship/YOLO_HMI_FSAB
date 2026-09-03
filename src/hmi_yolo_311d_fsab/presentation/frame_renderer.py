@@ -28,4 +28,3 @@ def render_frame(frame: CameraFrame, result: InferenceResult) -> QImage:
         painter.drawText(box.x, label_y, label)
     painter.end()
     return image
-

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QObject, QThread, QTimer, Signal, Slot
@@ -11,6 +11,7 @@ from hmi_yolo_311d_fsab.domain.camera import CameraState
 from hmi_yolo_311d_fsab.domain.health import HealthStatus
 from hmi_yolo_311d_fsab.domain.inference import InferenceState
 from hmi_yolo_311d_fsab.domain.plc import ConnectionState
+from hmi_yolo_311d_fsab.domain.recipe import InspectionRecipe, RecipeError
 from hmi_yolo_311d_fsab.infrastructure.config import AppConfig
 from hmi_yolo_311d_fsab.presentation.camera_worker import CameraWorker
 from hmi_yolo_311d_fsab.presentation.main_window import MainWindow
@@ -23,10 +24,12 @@ from hmi_yolo_311d_fsab.services.configuration_service import ConfigurationServi
 from hmi_yolo_311d_fsab.services.health_service import HealthService
 from hmi_yolo_311d_fsab.services.history_service import HistoryService
 from hmi_yolo_311d_fsab.services.hmi_service import HmiService, HmiState
+from hmi_yolo_311d_fsab.services.recipe_service import RecipeService
 
 
 class ApplicationController(QObject):
     shutdown_requested = Signal()
+    simulated_input_requested = Signal(str, object)
 
     def __init__(
         self,
@@ -43,6 +46,7 @@ class ApplicationController(QObject):
         theme_manager: ThemeManager,
         health_service: HealthService,
         history_service: HistoryService,
+        recipe_service: RecipeService,
     ) -> None:
         super().__init__()
         self._qt_app = qt_app
@@ -58,6 +62,7 @@ class ApplicationController(QObject):
         self._theme_manager = theme_manager
         self._health_service = health_service
         self._history_service = history_service
+        self._recipe_service = recipe_service
         self._health_alerted: set[str] = set()
         self._health_timer = QTimer(self)
         self._health_timer.setInterval(1000)
@@ -66,13 +71,16 @@ class ApplicationController(QObject):
         self._logger = logging.getLogger(__name__)
 
         worker.moveToThread(worker_thread)
-        camera_worker.moveToThread(worker_thread)
         window.connect_requested.connect(worker.connect_plc)
         window.disconnect_requested.connect(worker.disconnect_plc)
         worker.state_changed.connect(window.apply_state)
         worker.state_changed.connect(self.observe_state)
         worker.operation_failed.connect(self.handle_plc_error)
         worker.io_updated.connect(window.show_plc_snapshot)
+        worker.trigger_detected.connect(camera_worker.run_automatic_cycle)
+        worker.result_ack_detected.connect(camera_worker.acknowledge_cycle)
+        self.simulated_input_requested.connect(worker.set_simulated_input)
+        worker.simulated_input_changed.connect(self.show_simulated_input_change)
         window.camera_start_requested.connect(camera_worker.start_camera)
         window.camera_stop_requested.connect(camera_worker.stop_camera)
         camera_worker.frame_ready.connect(window.show_frame)
@@ -101,7 +109,15 @@ class ApplicationController(QObject):
         window.alarm_acknowledge_all_requested.connect(self.acknowledge_all_alarms)
         window.history_page.export_requested.connect(self.export_history)
         window.history_page.clear_requested.connect(self.clear_history)
+        window.recipes_page.save_requested.connect(self.save_recipe)
+        window.recipes_page.activate_requested.connect(self.activate_recipe)
+        window.recipes_page.duplicate_requested.connect(self.duplicate_recipe)
+        window.recipes_page.delete_requested.connect(self.delete_recipe)
+        window.plc_simulator_page.input_requested.connect(self.simulated_input_requested.emit)
+        window.plc_simulator_page.pulse_requested.connect(self.pulse_simulated_input)
         window.snapshot_requested.connect(self.save_snapshot)
+        window.calibration_changed.connect(camera_worker.set_calibration_mode)
+        camera_worker.nok_evidence_ready.connect(self.save_nok_evidence)
 
     def start(self, *, show_window: bool = True) -> None:
         self._hmi_service.start()
@@ -109,6 +125,8 @@ class ApplicationController(QObject):
         self._health_timer.start()
         self.check_health()
         self.refresh_history()
+        self.refresh_recipes()
+        self.window.set_class_rules(self._recipe_service.active().class_rules)
         if show_window:
             self.window.show()
         self._logger.info("Aplicacion iniciada")
@@ -116,6 +134,18 @@ class ApplicationController(QObject):
     def run(self) -> int:
         self.start()
         return self._qt_app.exec()
+
+    @Slot(str)
+    def pulse_simulated_input(self, logical_name: str) -> None:
+        self.simulated_input_requested.emit(logical_name, True)
+        QTimer.singleShot(
+            max(500, self._config.production.plc_poll_interval_ms * 2),
+            lambda: self.simulated_input_requested.emit(logical_name, False),
+        )
+
+    @Slot(str, object)
+    def show_simulated_input_change(self, logical_name: str, value: object) -> None:
+        self.window.events_page.append(f"SIMULADOR: {logical_name} = {value}")
 
     @Slot()
     def open_settings(self) -> None:
@@ -202,6 +232,57 @@ class ApplicationController(QObject):
         except OSError as exc:
             QMessageBox.warning(self.window, "No fue posible limpiar", str(exc))
 
+    def refresh_recipes(self) -> None:
+        self.window.recipes_page.set_recipes(
+            self._recipe_service.recipes(), self._recipe_service.active()
+        )
+
+    @Slot(object)
+    def save_recipe(self, recipe: object) -> None:
+        if not isinstance(recipe, InspectionRecipe):
+            return
+        try:
+            self._recipe_service.save(recipe)
+            self.refresh_recipes()
+        except (OSError, RecipeError) as exc:
+            QMessageBox.warning(self.window, "Receta invalida", str(exc))
+
+    @Slot(str)
+    def activate_recipe(self, identifier: str) -> None:
+        try:
+            recipe = self._recipe_service.get(identifier)
+            self._hmi_service.apply_recipe(recipe)
+            self._camera_worker.set_maximum_frame_age(recipe.maximum_frame_age_ms)
+            self._recipe_service.activate(identifier)
+            self.window.set_class_rules(recipe.class_rules)
+            self.refresh_recipes()
+            self.window.events_page.append(f"Receta activada: {recipe.name}")
+        except (OSError, RecipeError) as exc:
+            QMessageBox.warning(self.window, "No fue posible activar", str(exc))
+
+    @Slot(str)
+    def duplicate_recipe(self, identifier: str) -> None:
+        try:
+            self._recipe_service.duplicate(identifier)
+            self.refresh_recipes()
+        except (OSError, RecipeError) as exc:
+            QMessageBox.warning(self.window, "No fue posible duplicar", str(exc))
+
+    @Slot(str)
+    def delete_recipe(self, identifier: str) -> None:
+        if (
+            QMessageBox.question(
+                self.window, "Eliminar receta", "¿Eliminar la receta seleccionada?"
+            )
+            is not QMessageBox.StandardButton.Yes
+        ):
+            return
+        try:
+            self._recipe_service.delete(identifier)
+            self.refresh_recipes()
+        except (OSError, RecipeError) as exc:
+            QMessageBox.warning(self.window, "No fue posible eliminar", str(exc))
+
     @Slot(object, int)
     def save_snapshot(self, image: object, frame_sequence: int) -> None:
         if not isinstance(image, QImage):
@@ -222,6 +303,25 @@ class ApplicationController(QObject):
             return
         self.window.show_snapshot_saved(target)
 
+    @Slot(object, object)
+    def save_nok_evidence(self, image: object, result: object) -> None:
+        if not isinstance(image, QImage):
+            return
+        evidence_dir = self._config.paths.data_dir / "evidence_nok"
+        cutoff = datetime.now() - timedelta(days=7)
+        try:
+            evidence_dir.mkdir(parents=True, exist_ok=True)
+            for old_file in evidence_dir.glob("nok-*.jpg"):
+                if datetime.fromtimestamp(old_file.stat().st_mtime) < cutoff:
+                    old_file.unlink()
+            frame = getattr(result, "frame_sequence", 0)
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+            target = evidence_dir / f"nok-{timestamp}-frame-{frame:06d}.jpg"
+            if image.save(str(target), b"JPG", 88):
+                self.window.events_page.append(f"Evidencia NOK guardada: {target.name}")
+        except (OSError, ValueError):
+            self._logger.exception("No fue posible guardar la evidencia NOK")
+
     @Slot(object)
     def observe_state(self, state: HmiState) -> None:
         if state.plc_state is ConnectionState.CONNECTED:
@@ -239,9 +339,7 @@ class ApplicationController(QObject):
         self.window.set_health(self._health_service.snapshots())
 
     @Slot(object, object, object)
-    def record_frame_heartbeat(
-        self, _image: object, _raw_image: object, _result: object
-    ) -> None:
+    def record_frame_heartbeat(self, _image: object, _raw_image: object, _result: object) -> None:
         self._health_service.heartbeat("CAMARA", "Frames recibidos")
         self._health_service.heartbeat("INFERENCIA", "Frames procesados")
 
@@ -289,4 +387,3 @@ class ApplicationController(QObject):
         else:
             self._hmi_service.stop()
         self._logger.info("Aplicacion cerrada")
-

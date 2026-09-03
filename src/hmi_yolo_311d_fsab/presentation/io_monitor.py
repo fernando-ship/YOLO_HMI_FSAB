@@ -114,4 +114,3 @@ class IoMonitor(QTableWidget):
     def _set_boolean_indicator(indicator: StatusIndicator, active: bool) -> None:
         indicator.setText("ON" if active else "OFF")
         indicator.set_active(active)
-

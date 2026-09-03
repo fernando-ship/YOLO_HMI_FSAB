@@ -39,4 +39,3 @@ class MaintenancePage(QWidget):
             for column, value in enumerate(values):
                 self.health_table.setItem(row, column, QTableWidgetItem(value))
         self.health_table.resizeColumnsToContents()
-

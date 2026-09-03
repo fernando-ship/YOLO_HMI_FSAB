@@ -52,4 +52,3 @@ def test_connection_error_is_deterministic() -> None:
     with pytest.raises(PlcConnectionError):
         client.connect()
     assert client.get_connection_state() is ConnectionState.ERROR
-

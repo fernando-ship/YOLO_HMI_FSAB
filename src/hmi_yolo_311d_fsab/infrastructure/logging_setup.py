@@ -13,4 +13,3 @@ def configure_logging(level: str, log_dir: Path) -> None:
         ],
         force=True,
     )
-

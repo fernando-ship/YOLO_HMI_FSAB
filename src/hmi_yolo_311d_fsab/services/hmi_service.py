@@ -11,6 +11,7 @@ from hmi_yolo_311d_fsab.domain.inspection import (
 )
 from hmi_yolo_311d_fsab.domain.plc import ConnectionState
 from hmi_yolo_311d_fsab.domain.production import ProductionCycleResult, ProductionState
+from hmi_yolo_311d_fsab.domain.recipe import InspectionRecipe
 from hmi_yolo_311d_fsab.services.camera_service import CameraService
 from hmi_yolo_311d_fsab.services.inference_service import InferenceService
 from hmi_yolo_311d_fsab.services.inspection_service import InspectionService
@@ -38,6 +39,7 @@ class HmiService:
         inspection_service: InspectionService,
         production_service: ProductionService,
         inspection_store: InspectionResultStore,
+        simulated_inputs: dict[str, str] | None = None,
         *,
         simulated_plc: bool,
         inference_enabled: bool,
@@ -49,6 +51,7 @@ class HmiService:
         self._inspection_service = inspection_service
         self._production_service = production_service
         self._inspection_store = inspection_store
+        self._simulated_inputs = dict(simulated_inputs or {})
         self._inference_enabled = inference_enabled
         self._simulated_plc = simulated_plc
         self._camera_backend = camera_backend
@@ -80,7 +83,8 @@ class HmiService:
     def connect_plc(self) -> HmiState:
         state = self._plc_service.connect()
         self._production_service.arm()
-        self._message = "PLC simulado conectado correctamente"
+        plc_name = "simulado" if self._simulated_plc else "Omron NX"
+        self._message = f"PLC {plc_name} conectado correctamente"
         return self._build_state(state)
 
     def disconnect_plc(self) -> HmiState:
@@ -119,6 +123,9 @@ class HmiService:
         self._save_inspection(result, source="manual")
         return result, self._inspection_service.get_counters()
 
+    def calibrate(self, inference: InferenceResult) -> tuple[InspectionResult, InspectionCounters]:
+        return self._inspection_service.evaluate(inference), self._inspection_service.get_counters()
+
     def reset_inspection_counters(self) -> InspectionCounters:
         return self._inspection_service.reset_counters()
 
@@ -130,6 +137,20 @@ class HmiService:
         cycle = self._production_service.execute_if_triggered(inference)
         self._save_inspection(cycle.inspection, source="plc")
         return cycle, self._production_service.read_io_values()
+
+    def run_automatic_cycle(
+        self, inference: InferenceResult
+    ) -> tuple[ProductionCycleResult, dict[str, bool | int | float | str]]:
+        self._require_plc_connection()
+        cycle = self._production_service.execute_if_triggered(inference)
+        self._save_inspection(cycle.inspection, source="plc")
+        return cycle, self._production_service.read_io_values()
+
+    def result_acknowledged(self) -> bool:
+        return self._production_service.result_acknowledged()
+
+    def apply_recipe(self, recipe: InspectionRecipe) -> None:
+        self._production_service.apply_recipe(recipe)
 
     def _require_plc_connection(self) -> None:
         if self._plc_service.get_connection_state() is not ConnectionState.CONNECTED:
@@ -151,6 +172,15 @@ class HmiService:
         self._require_plc_connection()
         return self._production_service.read_io_values()
 
+    def set_simulated_input(self, logical_name: str, value: bool | str) -> None:
+        if not self._simulated_plc:
+            raise InspectionInterlockError("El simulador de entradas esta deshabilitado")
+        try:
+            tag = self._simulated_inputs[logical_name]
+        except KeyError as exc:
+            raise InspectionInterlockError(f"'{logical_name}' no es una entrada simulable") from exc
+        self._plc_service.write_variable(tag, value)
+
     def _build_state(self, plc_state: ConnectionState) -> HmiState:
         return HmiState(
             plc_state,
@@ -161,4 +191,3 @@ class HmiService:
             self._simulated_plc,
             self._camera_backend,
         )
-

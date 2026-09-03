@@ -9,5 +9,10 @@ build/
 dist/
 logs/
 data/
+datasets/
+models/
+runs/
+weights/
+yolo*.pt
 config/runtime.ini
 config/runtime.tmp

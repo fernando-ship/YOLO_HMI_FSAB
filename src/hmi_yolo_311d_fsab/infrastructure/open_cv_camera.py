@@ -106,9 +106,7 @@ class OpenCvCameraClient:
                 self._state = CameraState.ERROR
                 raise CameraError("La camara OpenCV dejo de entregar imagenes")
             try:
-                rgb_frame = self._load_api().cvtColor(
-                    bgr_frame, self._load_api().COLOR_BGR2RGB
-                )
+                rgb_frame = self._load_api().cvtColor(bgr_frame, self._load_api().COLOR_BGR2RGB)
                 height, width = rgb_frame.shape[:2]
                 rgb_data = rgb_frame.tobytes()
             except Exception as exc:

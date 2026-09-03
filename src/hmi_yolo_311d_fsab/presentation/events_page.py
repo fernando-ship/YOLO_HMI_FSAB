@@ -11,4 +11,3 @@ class EventsPage(QWidget):
 
     def append(self, message: str) -> None:
         self.events.appendPlainText(message)
-

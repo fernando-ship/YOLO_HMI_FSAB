@@ -19,4 +19,3 @@ class LinuxCameraDiscovery:
                     )
                 )
         return tuple(devices)
-

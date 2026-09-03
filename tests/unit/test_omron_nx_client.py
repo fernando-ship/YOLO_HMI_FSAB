@@ -11,4 +11,3 @@ def test_rejects_nonstandard_explicit_message_port() -> None:
         client.connect()
 
     assert client.get_connection_state() is ConnectionState.ERROR
-

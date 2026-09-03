@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QCloseEvent, QImage
+from PySide6.QtGui import QCloseEvent, QImage, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -16,10 +16,15 @@ from hmi_yolo_311d_fsab.domain.alarm import Alarm
 from hmi_yolo_311d_fsab.domain.camera import CameraState
 from hmi_yolo_311d_fsab.domain.health import HealthSnapshot
 from hmi_yolo_311d_fsab.domain.inference import InferenceResult
-from hmi_yolo_311d_fsab.domain.inspection import InspectionCounters, InspectionResult
+from hmi_yolo_311d_fsab.domain.inspection import (
+    InspectionClassRule,
+    InspectionCounters,
+    InspectionResult,
+)
 from hmi_yolo_311d_fsab.domain.io_points import IoPoint
 from hmi_yolo_311d_fsab.domain.production import ProductionCycleResult, ProductionState
 from hmi_yolo_311d_fsab.presentation.alarms_page import AlarmsPage
+from hmi_yolo_311d_fsab.presentation.calibration_page import CalibrationPage
 from hmi_yolo_311d_fsab.presentation.animations import fade_in
 from hmi_yolo_311d_fsab.presentation.configuration_page import ConfigurationPage
 from hmi_yolo_311d_fsab.presentation.events_page import EventsPage
@@ -27,6 +32,8 @@ from hmi_yolo_311d_fsab.presentation.history_page import HistoryPage
 from hmi_yolo_311d_fsab.presentation.io_monitor import IoMonitor
 from hmi_yolo_311d_fsab.presentation.maintenance_page import MaintenancePage
 from hmi_yolo_311d_fsab.presentation.operation_page import OperationPage
+from hmi_yolo_311d_fsab.presentation.plc_simulator_page import PlcSimulatorPage
+from hmi_yolo_311d_fsab.presentation.recipes_page import RecipesPage
 from hmi_yolo_311d_fsab.services.hmi_service import HmiState
 
 
@@ -45,6 +52,7 @@ class MainWindow(QMainWindow):
     alarm_acknowledge_requested = Signal(int)
     alarm_acknowledge_all_requested = Signal()
     snapshot_requested = Signal(object, int)
+    calibration_changed = Signal(bool)
 
     def __init__(
         self,
@@ -59,9 +67,12 @@ class MainWindow(QMainWindow):
         self._latest_raw_image: QImage | None = None
         self._latest_frame_sequence = -1
         self.operation_page = OperationPage(initial_state)
+        self.calibration_page = CalibrationPage(initial_state)
         self.io_monitor = IoMonitor(io_points, simulated=initial_state.simulated_plc)
         self.events_page = EventsPage()
         self.history_page = HistoryPage()
+        self.recipes_page = RecipesPage()
+        self.plc_simulator_page = PlcSimulatorPage(io_points, enabled=initial_state.simulated_plc)
         self.configuration_page = ConfigurationPage()
         self.maintenance_page = MaintenancePage(
             simulated_plc=initial_state.simulated_plc,
@@ -75,9 +86,12 @@ class MainWindow(QMainWindow):
             self.io_monitor,
             self.events_page,
             self.history_page,
+            self.recipes_page,
+            self.plc_simulator_page,
             self.alarms_page,
             self.configuration_page,
             self.maintenance_page,
+            self.calibration_page,
         ):
             self.pages.addWidget(page)
 
@@ -88,9 +102,12 @@ class MainWindow(QMainWindow):
                 "Monitor I/O",
                 "Eventos",
                 "Historial",
+                "Recetas",
+                "Simulador PLC",
                 "Alarmas (0)",
                 "Configuracion",
                 "Mantenimiento",
+                "Calibracion",
             ]
         )
         self.navigation.setFixedWidth(190)
@@ -110,7 +127,25 @@ class MainWindow(QMainWindow):
         plc_label = "PLC SIMULADO" if initial_state.simulated_plc else "OMRON NX ETHERNET/IP"
         self.title_label = QLabel(f"HMI_YOLO_311D_FSAB  |  {plc_label}")
         self.title_label.setObjectName("applicationTitle")
-        root.addWidget(self.title_label)
+        self.brand_logo = QLabel()
+        self.brand_logo.setObjectName("brandLogo")
+        self.brand_logo.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        logo_path = Path(__file__).parent / "assets" / "tapexvision-logo.png"
+        logo = QPixmap(str(logo_path))
+        self.brand_logo.setPixmap(
+            logo.scaled(
+                300,
+                72,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        self.brand_logo.setFixedSize(310, 76)
+        header = QHBoxLayout()
+        header.addWidget(self.title_label)
+        header.addStretch()
+        header.addWidget(self.brand_logo)
+        root.addLayout(header)
         root.addWidget(self.message_banner)
         root.addLayout(content)
         container = QWidget()
@@ -131,22 +166,20 @@ class MainWindow(QMainWindow):
             self._latest_raw_image = None
             self._latest_frame_sequence = -1
         self.operation_page.apply_state(state)
+        self.calibration_page.apply_state(state)
         self.events_page.append(state.message)
 
-    def show_frame(
-        self, image: QImage, raw_image: QImage, result: InferenceResult
-    ) -> None:
+    def show_frame(self, image: QImage, raw_image: QImage, result: InferenceResult) -> None:
         self._latest_raw_image = raw_image.copy()
         self._latest_frame_sequence = result.frame_sequence
         self.operation_page.show_frame(image, result)
+        self.calibration_page.show_frame(image, result)
 
     def _request_snapshot(self) -> None:
         if self._latest_raw_image is None:
             self.events_page.append("CAPTURA: No existe un frame disponible")
             return
-        self.snapshot_requested.emit(
-            self._latest_raw_image.copy(), self._latest_frame_sequence
-        )
+        self.snapshot_requested.emit(self._latest_raw_image.copy(), self._latest_frame_sequence)
 
     def show_snapshot_saved(self, path: Path) -> None:
         self.operation_page.show_snapshot_saved(str(path))
@@ -174,10 +207,14 @@ class MainWindow(QMainWindow):
 
     def set_alarms(self, alarms: tuple[Alarm, ...], active_count: int) -> None:
         self.alarms_page.set_alarms(alarms)
-        self.navigation.item(4).setText(f"Alarmas ({active_count})")
+        self.navigation.item(6).setText(f"Alarmas ({active_count})")
 
     def set_reduced_motion(self, reduced_motion: bool) -> None:
         self._reduced_motion = reduced_motion
+
+    def set_class_rules(self, rules: tuple[InspectionClassRule, ...]) -> None:
+        self.operation_page.set_class_rules(rules)
+        self.calibration_page.set_class_rules(rules)
 
     def set_health(self, snapshots: tuple[HealthSnapshot, ...]) -> None:
         self.maintenance_page.set_health(snapshots)
@@ -218,6 +255,7 @@ class MainWindow(QMainWindow):
 
     def show_plc_snapshot(self, values: dict[str, bool | int | float | str]) -> None:
         self.io_monitor.update_values(values)
+        self.plc_simulator_page.update_values(values)
         message = values.get("operator_message", "")
         self.message_banner.setText(str(message) if message else "PLC conectado - sin mensajes")
 
@@ -233,6 +271,7 @@ class MainWindow(QMainWindow):
             (self.operation_page.camera_stop_requested, self.camera_stop_requested),
             (self.operation_page.inspection_requested, self.inspection_requested),
             (self.operation_page.counters_reset_requested, self.counters_reset_requested),
+            (self.operation_page.calibration_changed, self.calibration_changed),
             (self.operation_page.production_cycle_requested, self.production_cycle_requested),
             (
                 self.operation_page.production_acknowledge_requested,
@@ -241,6 +280,13 @@ class MainWindow(QMainWindow):
         )
         for source, target in pairs:
             source.connect(target.emit)
+        self.calibration_page.camera_start_requested.connect(self.camera_start_requested.emit)
+        self.calibration_page.camera_stop_requested.connect(self.camera_stop_requested.emit)
+        self.calibration_page.snapshot_requested.connect(self._request_snapshot)
+        self.calibration_page.calibration_changed.connect(
+            self.operation_page.calibration_mode.setChecked
+        )
+        self.operation_page.calibration_changed.connect(self.calibration_page.set_mode)
 
     def _publish_test_handles(self) -> None:
         names = (
@@ -265,4 +311,3 @@ class MainWindow(QMainWindow):
         )
         for name in names:
             setattr(self, name, getattr(self.operation_page, name))
-

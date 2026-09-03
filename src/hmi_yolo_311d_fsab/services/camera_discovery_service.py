@@ -13,4 +13,3 @@ class CameraDiscoveryService:
 
     def discover(self) -> tuple[CameraDevice, ...]:
         return self._discovery.discover()
-

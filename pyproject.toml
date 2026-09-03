@@ -19,6 +19,9 @@ camera = [
 plc = [
     "aphyt==0.1.29",
 ]
+yolo = [
+    "ultralytics>=8.3,<9",
+]
 dev = [
     "mypy==1.11.2",
     "pytest==8.3.3",
@@ -31,6 +34,9 @@ hmi-yolo-311d-fsab = "hmi_yolo_311d_fsab.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+hmi_yolo_311d_fsab = ["presentation/assets/*.png"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-markers --strict-config"

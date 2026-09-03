@@ -33,4 +33,3 @@ class CameraService:
 
     def capture_frame(self) -> CameraFrame:
         return self._client.capture_frame()
-

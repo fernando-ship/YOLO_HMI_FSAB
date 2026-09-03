@@ -68,4 +68,3 @@ class HealthService:
             return self._components[component]
         except KeyError as exc:
             raise KeyError(f"Componente de salud no registrado: {component}") from exc
-

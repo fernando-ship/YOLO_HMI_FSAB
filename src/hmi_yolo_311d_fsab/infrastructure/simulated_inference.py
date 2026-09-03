@@ -52,4 +52,3 @@ class SimulatedInferenceEngine:
                 )
             elapsed_ms = 2.0 + (frame.sequence % 4) * 0.25
             return InferenceResult(frame.sequence, detections, elapsed_ms)
-

@@ -81,4 +81,3 @@ class OmronNxEtherNetIpClient:
         if self._connection is None or self._state is not ConnectionState.CONNECTED:
             raise PlcNotConnectedError("El PLC Omron NX no esta conectado")
         return self._connection
-

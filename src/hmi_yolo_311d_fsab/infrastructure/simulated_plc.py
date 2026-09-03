@@ -59,4 +59,3 @@ class SimulatedPlcClient:
     def _ensure_connected(self) -> None:
         if self._state is not ConnectionState.CONNECTED:
             raise PlcNotConnectedError("El PLC no esta conectado")
-

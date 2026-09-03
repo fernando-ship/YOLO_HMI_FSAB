@@ -3,7 +3,11 @@ from hmi_yolo_311d_fsab.domain.inference import (
     Detection,
     InferenceResult,
 )
-from hmi_yolo_311d_fsab.domain.inspection import InspectionRules, InspectionStatus
+from hmi_yolo_311d_fsab.domain.inspection import (
+    InspectionClassRule,
+    InspectionRules,
+    InspectionStatus,
+)
 from hmi_yolo_311d_fsab.services.inspection_service import InspectionService
 
 
@@ -46,3 +50,33 @@ def test_counters_can_be_reset() -> None:
     assert counters.accepted == 0
     assert counters.rejected == 0
 
+
+def test_multiclass_rules_require_every_enabled_class() -> None:
+    rules = InspectionRules(
+        "legacy",
+        0.5,
+        1,
+        1,
+        (
+            InspectionClassRule("Bolsa", 0.70, 1, 1),
+            InspectionClassRule("Label", 0.80, 1, 1),
+            InspectionClassRule("QR CODE", 0.75, 1, 1),
+        ),
+    )
+    service = InspectionService(rules)
+    complete = make_result(
+        Detection("Bolsa", 0.95, BoundingBox(0, 0, 10, 10)),
+        Detection("Label", 0.82, BoundingBox(0, 0, 10, 10)),
+        Detection("QR CODE", 0.90, BoundingBox(0, 0, 10, 10)),
+    )
+    missing_label = make_result(
+        Detection("Bolsa", 0.95, BoundingBox(0, 0, 10, 10)),
+        Detection("QR CODE", 0.90, BoundingBox(0, 0, 10, 10)),
+    )
+
+    assert service.inspect(complete).status is InspectionStatus.OK
+    rejected = service.inspect(missing_label)
+    assert rejected.status is InspectionStatus.NOK
+    assert "Label" in rejected.reason
+    assert service.quality_score(complete) == 0.82
+    assert service.quality_score(missing_label) == 0.0

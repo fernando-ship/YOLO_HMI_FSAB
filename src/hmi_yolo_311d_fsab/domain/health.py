@@ -14,4 +14,3 @@ class HealthSnapshot:
     status: HealthStatus
     message: str
     last_heartbeat: float | None
-

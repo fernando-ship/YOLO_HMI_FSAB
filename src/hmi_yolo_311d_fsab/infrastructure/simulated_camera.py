@@ -56,4 +56,3 @@ class SimulatedCameraClient:
                 data[offset + 2] = (x + y + sequence * 7) % 256
                 offset += 3
         return bytes(data)
-

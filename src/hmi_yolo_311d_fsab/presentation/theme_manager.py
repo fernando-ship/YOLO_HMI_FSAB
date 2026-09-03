@@ -23,6 +23,8 @@ class ThemeManager:
                 "#374151",
                 "#2563eb",
                 "#18212f",
+                "#92400e",
+                "#f59e0b",
             ),
             Theme.LIGHT: (
                 "#f3f4f6",
@@ -31,17 +33,21 @@ class ThemeManager:
                 "#d1d5db",
                 "#2563eb",
                 "#e8edf3",
+                "#92400e",
+                "#f59e0b",
             ),
             Theme.HIGH_CONTRAST: (
                 "#000000",
                 "#111111",
                 "#ffffff",
                 "#ffffff",
-                "#ffff00",
+                "#ef233c",
                 "#202020",
+                "#991b1b",
+                "#ff3347",
             ),
         }
-        background, surface, text, border, accent, alternate = palettes[theme]
+        background, surface, text, border, accent, alternate, retry, retry_border = palettes[theme]
         return f"""
             QWidget {{ background: {background}; color: {text}; font-size: 14px; }}
             QListWidget, QPlainTextEdit, QTableWidget, QTabWidget::pane {{
@@ -66,7 +72,7 @@ class ThemeManager:
                 color: white; font-weight: 600; }}
             QPushButton[actionRole="stop"] {{ background: #7f1d1d; border-color: #ef4444;
                 color: white; font-weight: 600; }}
-            QPushButton[actionRole="retry"] {{ background: #92400e; border-color: #f59e0b;
+            QPushButton[actionRole="retry"] {{ background: {retry}; border-color: {retry_border};
                 color: white; font-weight: 700; }}
             QPushButton[actionRole="primary"] {{ background: #1d4ed8; border-color: #60a5fa;
                 color: white; font-weight: 700; }}
@@ -87,5 +93,7 @@ class ThemeManager:
             QLabel#ioValueText {{ font-size: 13px; font-weight: 700; }}
             QHeaderView::section {{ background: {surface}; padding: 9px; border: 0;
                 border-bottom: 2px solid {accent}; font-size: 13px; font-weight: 700; }}
+            QLabel#plcMessageBanner {{ border: 2px solid {accent}; border-radius: 7px;
+                background: {surface}; color: {text}; font-weight: 700; }}
+            QLabel#brandLogo {{ background: transparent; border: 0; }}
         """
-

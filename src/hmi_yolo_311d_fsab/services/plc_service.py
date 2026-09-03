@@ -63,4 +63,3 @@ class PlcService:
     def _ensure_started(self) -> None:
         if not self._started:
             raise PlcError("El servicio PLC no esta iniciado")
-

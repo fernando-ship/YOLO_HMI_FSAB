@@ -60,6 +60,7 @@ def test_hmi_service_lifecycle_and_state() -> None:
             "inspection_nok": "inspection_nok",
             "inspection_sequence": "inspection_sequence",
             "quality_percent": "quality_percent",
+            "result_ack": "result_ack",
         },
     )
     service = HmiService(
@@ -99,6 +100,7 @@ def test_hmi_service_coordinates_camera() -> None:
             "inspection_nok": "inspection_nok",
             "inspection_sequence": "inspection_sequence",
             "quality_percent": "quality_percent",
+            "result_ack": "result_ack",
         },
     )
     service = HmiService(
@@ -141,6 +143,7 @@ def test_inspection_is_blocked_until_plc_is_connected() -> None:
             "inspection_nok": "inspection_nok",
             "inspection_sequence": "inspection_sequence",
             "quality_percent": "quality_percent",
+            "result_ack": "result_ack",
         },
     )
     store = MemoryInspectionStore()
@@ -166,4 +169,3 @@ def test_inspection_is_blocked_until_plc_is_connected() -> None:
     service.inspect(inference)
     assert store.saved[0][1] == "manual"
     service.stop()
-

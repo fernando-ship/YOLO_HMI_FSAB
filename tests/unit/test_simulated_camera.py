@@ -29,4 +29,3 @@ def test_camera_service_lifecycle() -> None:
     assert service.start() is CameraState.RUNNING
     assert service.capture_frame().width == 8
     assert service.stop() is CameraState.STOPPED
-

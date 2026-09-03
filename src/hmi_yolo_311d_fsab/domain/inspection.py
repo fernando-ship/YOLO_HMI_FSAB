@@ -12,11 +12,21 @@ class InspectionStatus(Enum):
 
 
 @dataclass(frozen=True)
+class InspectionClassRule:
+    label: str
+    minimum_confidence: float
+    minimum_objects: int
+    maximum_objects: int
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class InspectionRules:
     expected_label: str
     minimum_confidence: float
     minimum_objects: int
     maximum_objects: int
+    class_rules: tuple[InspectionClassRule, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -63,4 +73,3 @@ class InspectionResultStore(Protocol):
     def clear(self) -> int: ...
 
     def storage_bytes(self) -> int: ...
-

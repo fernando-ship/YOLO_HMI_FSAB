@@ -21,4 +21,3 @@ class CameraDevice:
     identifier: str
     display_name: str
     backend: CameraBackend
-

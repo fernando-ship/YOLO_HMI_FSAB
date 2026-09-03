@@ -41,4 +41,3 @@ def test_inference_service_lifecycle() -> None:
     assert service.start() is InferenceState.RUNNING
     assert len(service.process(make_frame()).detections) == 1
     assert service.stop() is InferenceState.STOPPED
-

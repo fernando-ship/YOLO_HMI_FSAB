@@ -7,8 +7,9 @@ from hmi_yolo_311d_fsab.domain.inspection import InspectionCounters, InspectionR
 class ProductionState(Enum):
     IDLE = "idle"
     WAITING_TRIGGER = "waiting_trigger"
+    VALIDATING = "validating"
     INSPECTING = "inspecting"
-    COMPLETED = "completed"
+    WAITING_ACK = "waiting_ack"
     ERROR = "error"
 
 
@@ -22,4 +23,3 @@ class ProductionCycleResult:
 
 class ProductionError(Exception):
     """No fue posible completar un ciclo de produccion controlado."""
-
